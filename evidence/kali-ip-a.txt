@@ -1,0 +1,9 @@
+Interface: eth0 (Host-Only)
+State: UP
+IPv4 Address: 192.168.56.30/24
+Purpose: Internal host-only network communication
+
+Interface: eth1 (NAT)
+State: UP
+IPv4 Address: 10.0.3.15/24 (DHCP)
+Purpose: External internet access via NAT
