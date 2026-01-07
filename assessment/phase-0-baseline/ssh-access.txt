@@ -1,0 +1,40 @@
+Baseline SSH Access Verification
+================================
+
+Host System:
+- Windows 11 (PowerShell)
+
+Target 1: Ubuntu Server
+----------------------
+Command:
+ssh bader@192.168.56.20
+
+Result:
+- Successful SSH login
+- Ubuntu 24.04 LTS
+- Connection established over host-only network (192.168.56.0/24)
+- Session exited cleanly
+
+Target 2: Kali Linux
+-------------------
+Command:
+ssh kali@192.168.56.30
+
+Initial Result:
+- SSH connection refused
+
+Diagnosis:
+- SSH service (sshd) was not running on Kali
+
+Fix Applied:
+- Started SSH service
+- Enabled SSH to start on boot
+
+Result After Fix:
+- Successful SSH login
+- Kali Linux accessed over host-only network
+- Session exited cleanly
+
+Conclusion:
+Baseline SSH access to both Ubuntu and Kali is confirmed.
+
