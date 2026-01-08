@@ -1,0 +1,16 @@
+UFW Rule Configuration
+
+Rule added:
+sudo ufw allow from 192.168.56.0/24 to any port 22
+
+Explanation:
+- Allows SSH access only from the trusted host-only network.
+- Prevents SSH access from external or unintended networks.
+- Maintains administrative access while reducing attack surface.
+
+Security impact:
+- SSH is no longer globally reachable.
+- Network segmentation is enforced at the firewall level.
+- Reduces risk of lateral movement and brute-force exposure.
+
+This rule supports the defense-in-depth strategy for SSH hardening.
