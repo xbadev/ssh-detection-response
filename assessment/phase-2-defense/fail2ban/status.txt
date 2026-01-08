@@ -1,1 +1,15 @@
+Fail2Ban Service Status
 
+Command executed:
+sudo systemctl status fail2ban
+
+Observed result:
+- Fail2Ban service is active and running.
+- Service is enabled to start at boot.
+- SSH jail is loaded and monitoring authentication logs.
+
+Key takeaway:
+Fail2Ban is actively monitoring SSH authentication attempts
+and is ready to ban offending IPs based on configured thresholds.
+
+This provides automated response capability against brute-force attacks.
