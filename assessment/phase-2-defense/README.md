@@ -55,8 +55,4 @@ Phase 2 is complete when:
 - Fail2ban is installed, running, and configured for `sshd` (files in `fail2ban/`)
 - We are ready to validate that Kali’s brute-force attempts trigger a ban and are blocked
 
-Next phase:
-➡️ **Phase 3: Validation**  
-Re-run the controlled attack and capture proof that Fail2ban bans Kali and SSH attempts are blocked (with logs + fail2ban status output).
-
 ---
