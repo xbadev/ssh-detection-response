@@ -23,9 +23,3 @@ This phase demonstrates:
 ## Results
 - Hydra attempted 3 passwords and found 0 valid credentials.
 - Ubuntu logged authentication failures and failed password entries from 192.168.56.30.
-
-## Evidence
-- Kali connectivity and wordlist creation: `screenshots/kali-connectivity-and-wordlist.png`
-- Hydra attempt output: `screenshots/kali-hydra-ssh-bruteforce.png`
-- Ubuntu auth.log failures from Kali IP: `screenshots/ubuntu-authlog-failures.png`
-- Trimmed evidence summary: `attack-log.txt`
