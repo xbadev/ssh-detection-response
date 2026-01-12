@@ -9,7 +9,7 @@ SSH brute-force detector
 """
 
 import argparse, re
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 FAILED_RE = re.compile(r'^(?P<ts>\S+)\s+\S+\s+sshd\[\d+\]: Failed password for\s+(?P<user>\S+)\s+from\s+(?P<ip>\d+.\d+.\d+.\d+)')
