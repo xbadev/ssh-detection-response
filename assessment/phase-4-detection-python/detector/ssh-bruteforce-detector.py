@@ -85,6 +85,25 @@ def detect_bruteforce(attempts, threshold: int, window_seconds: int):
 
     return alerts
 
+def write_alerts(alerts, output_path: Path):
+    """
+    Append detected alerts to an output log file.
+    """
+    if not alerts:
+        return
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with output_path.open("a") as f:
+        for alert in alerts:
+            f.write(
+                f"[ALERT] {alert['ip']} | "
+                f"count={alert['count']} | "
+                f"from={alert['first_seen']} | "
+                f"to={alert['last_seen']}\n"
+            )
+
+
 
 def main():
     parser = argparse.ArgumentParser(description="SSH brute-force detector")
@@ -111,17 +130,21 @@ def main():
 
     alerts = detect_bruteforce(attempts, args.threshold, args.window)
 
+    output_file = Path("output/alerts.log")
+
     if not alerts:
         print("[INFO] No brute-force patterns detected.")
-
     else:
         print(f"[ALERT] Detected {len(alerts)} brute-force source(s):")
 
-    for alert in alerts:
-        print(
-            f"  - IP {alert['ip']} had {alert['count']} failures "
-            f"between {alert['first_seen']} and {alert['last_seen']}"
-        )
+        for alert in alerts:
+            print(
+                f"  - IP {alert['ip']} had {alert['count']} failures "
+                f"between {alert['first_seen']} and {alert['last_seen']}"
+            )
+
+        write_alerts(alerts, output_file)
+
 
 
     return 0
