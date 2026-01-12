@@ -1,5 +1,5 @@
 [Unit]
-Describtion = Run SSH bruteforce detector every minute
+Description = Run SSH bruteforce detector every minute
 
 [Timer]
 OnBootSec = 1min
@@ -7,4 +7,4 @@ OnUnitActiveSec = 1min
 Unit = ssh-bruteforce-detector.service
 
 [Install]
-WantedBy = timer.target
+WantedBy = timers.target
