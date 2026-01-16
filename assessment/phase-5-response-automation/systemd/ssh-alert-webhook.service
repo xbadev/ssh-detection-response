@@ -1,0 +1,13 @@
+[Unit]
+Description = Phase 5: Send webhook notifications for new SSH brute-force alerts
+Wants = network-online.target
+After = network-online.target
+
+[Service]
+Type = oneshot
+User = bader
+WorkingDirectory = /home/bader/cyber-homelab/lab/kali-ubuntu-dual-nic/assessment
+EnvironmentFile = /etc/ssh-bruteforce-responder.env
+ExecStart = /usr/bin/python3 /home/bader/cyber-homelab/lab/kali-ubuntu-dual-nic/assessment/phase-5-response-automation/responder/ssh-alert-webhook.py
+StandardOutput = journal
+StandardError = journal
