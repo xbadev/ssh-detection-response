@@ -1,5 +1,5 @@
 [Unit]
-Description = Phase 5: Run SSH webhook responder every minute
+Description = Run SSH webhook responder every minute
 
 [Timer]
 OnBootSec = 30s
@@ -8,4 +8,4 @@ Unit = ssh-alert-webhook.service
 Persistent = true
 
 [Install]
-WantedBy=timers.target
+WantedBy = timers.target

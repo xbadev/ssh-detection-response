@@ -84,8 +84,8 @@ def main():
     parser.add_argument("--max-lines", type=int, default=20, help="Max number of new alert lines to include per run")
     args = parser.parse_args()
 
-    phase5_root = Path(__file__).resolve().parents[1]                 # phase-5-response-automation
-    assessment_root = phase5_root.parent                              # assessment
+    phase5_root = Path(__file__).resolve().parents[1]  # phase-5-response-automation
+    assessment_root = phase5_root.parent         # assessment
     default_alerts_log = assessment_root / "phase-4-detection-python" / "output" / "alerts.log"
     default_state = phase5_root / "output" / "notify_state.json"
     notify_log = phase5_root / "output" / "notifications.log"
@@ -110,7 +110,7 @@ def main():
     prev_inode = int(state.get("inode", 0))
     prev_offset = int(state.get("offset", 0))
 
-    # Handle log rotation or truncation
+    # Handles log rotation or truncation
     if prev_inode != inode or prev_offset > size:
         prev_offset = 0
 

@@ -1,5 +1,5 @@
 [Unit]
-Description = Phase 5: Send webhook notifications for new SSH brute-force alerts
+Description = Send webhook notifications for new SSH brute-force alerts
 Wants = network-online.target
 After = network-online.target
 
