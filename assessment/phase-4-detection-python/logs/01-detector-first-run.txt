@@ -1,4 +1,0 @@
-[INFO] Parsed 14 failed login attempts from /var/log/auth.log
-[INFO] Lookback=600s, analyzing 14 attempts since 2026-01-12T21:40:56+00:00
-[ALERT] Detected 1 new brute-force source(s):
-  - IP 192.168.56.30 had 5 failures between 2026-01-12 21:50:44.453398+00:00 and 2026-01-12 21:50:49.032147+00:00

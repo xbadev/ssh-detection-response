@@ -1,3 +1,0 @@
-[INFO] Parsed 14 failed login attempts from /var/log/auth.log
-[INFO] Lookback=600s, analyzing 14 attempts since 2026-01-12T21:41:03+00:00
-[INFO] Brute-force detected but already alerted (deduped by state).
