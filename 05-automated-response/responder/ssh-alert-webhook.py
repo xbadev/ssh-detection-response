@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import os
+import re
+import socket
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
+
+ALERT_LINE_RE = re.compile(
+    r'^\[ALERT\]\s+(?P<ip>\S+)\s+\|\s+count=(?P<count>\d+)\s+\|\s+from=(?P<from>.+?)\s+\|\s+to=(?P<to>.+)$'
+)
+
+def load_json(path: Path, default: dict) -> dict:
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return default
+
+def save_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True))
+    tmp.replace(path)
+
+def post_webhook(url: str, content: str, timeout: int = 10) -> None:
+    payload = {"content": content}
+    body = json.dumps(payload).encode("utf-8")
+    req = Request(
+        url=url,
+        data=body,
+        headers={"Content-Type": "application/json", "User-Agent": "ssh-alert-responder/1.0"},
+        method="POST",
+    )
+    with urlopen(req, timeout=timeout) as resp:
+        _ = resp.read()
+
+def parse_alert_lines(lines):
+    parsed = []
+    for line in lines:
+        line = line.rstrip("\n")
+        m = ALERT_LINE_RE.match(line)
+        if not m:
+            continue
+        parsed.append({
+            "ip": m.group("ip"),
+            "count": int(m.group("count")),
+            "from": m.group("from"),
+            "to": m.group("to"),
+            "raw": line,
+        })
+    return parsed
+
+def chunk_messages(items, max_chars=1800):
+    chunks = []
+    current = []
+    current_len = 0
+
+    for s in items:
+        add_len = len(s) + 1
+        if current and current_len + add_len > max_chars:
+            chunks.append("\n".join(current))
+            current = [s]
+            current_len = len(s)
+        else:
+            current.append(s)
+            current_len += add_len
+
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
+
+def main():
+    parser = argparse.ArgumentParser(description="Phase 5: send webhook notifications for new SSH brute-force alerts")
+    parser.add_argument("--alerts-log", default="", help="Path to Phase 4 alerts.log (default: auto-detect)")
+    parser.add_argument("--state", default="", help="Path to responder state file (default: phase-5/output/notify_state.json)")
+    parser.add_argument("--dry-run", action="store_true", help="Do not send webhook, just print what would be sent")
+    parser.add_argument("--max-lines", type=int, default=20, help="Max number of new alert lines to include per run")
+    args = parser.parse_args()
+
+    phase5_root = Path(__file__).resolve().parents[1]  # phase-5-response-automation
+    assessment_root = phase5_root.parent         # assessment
+    default_alerts_log = assessment_root / "phase-4-detection-python" / "output" / "alerts.log"
+    default_state = phase5_root / "output" / "notify_state.json"
+    notify_log = phase5_root / "output" / "notifications.log"
+
+    alerts_log = Path(args.alerts_log) if args.alerts_log else default_alerts_log
+    state_path = Path(args.state) if args.state else default_state
+
+    webhook_url = os.getenv("ALERT_WEBHOOK_URL", "").strip()
+    if not webhook_url:
+        # Optional override via env
+        webhook_url = os.getenv("WEBHOOK_URL", "").strip()
+
+    if not alerts_log.exists():
+        print(f"[INFO] Alerts log not found yet: {alerts_log}")
+        return 0
+
+    st = alerts_log.stat()
+    inode = int(getattr(st, "st_ino", 0))
+    size = int(st.st_size)
+
+    state = load_json(state_path, default={"inode": inode, "offset": 0})
+    prev_inode = int(state.get("inode", 0))
+    prev_offset = int(state.get("offset", 0))
+
+    # Handles log rotation or truncation
+    if prev_inode != inode or prev_offset > size:
+        prev_offset = 0
+
+    with alerts_log.open("r", errors="replace") as f:
+        f.seek(prev_offset)
+        new_lines = f.readlines()
+        new_offset = f.tell()
+
+    if not new_lines:
+        print("[INFO] No new alert lines to notify.")
+        state["inode"] = inode
+        state["offset"] = new_offset
+        save_json(state_path, state)
+        return 0
+
+    if len(new_lines) > args.max_lines:
+        extra = len(new_lines) - args.max_lines
+        new_lines = new_lines[:args.max_lines]
+        new_lines.append(f"[INFO] (trimmed) {extra} additional alert lines not shown in this run\n")
+
+    alerts = parse_alert_lines(new_lines)
+
+    host = socket.gethostname()
+    now = datetime.now(timezone.utc).isoformat()
+
+    header = f"SSH brute-force alerts on {host} ({now})"
+    bullets = []
+
+    if alerts:
+        for a in alerts:
+            bullets.append(f"- {a['ip']} count={a['count']} from={a['from']} to={a['to']}")
+    else:
+        # If parsing fails, send raw lines
+        for line in new_lines:
+            bullets.append(f"- {line.strip()}")
+
+    chunks = chunk_messages([header] + bullets)
+
+    # Always write what we would send to a local log (gitignored)
+    notify_log.parent.mkdir(parents=True, exist_ok=True)
+    with notify_log.open("a") as nf:
+        nf.write(f"\n--- {now} ---\n")
+        for c in chunks:
+            nf.write(c + "\n")
+
+    if args.dry_run:
+        print("[DRY RUN] Would send webhook message(s):")
+        for i, c in enumerate(chunks, start=1):
+            print(f"\n--- message {i} ---\n{c}")
+        state["inode"] = inode
+        state["offset"] = new_offset
+        save_json(state_path, state)
+        return 0
+
+    if not webhook_url:
+        print("[WARN] ALERT_WEBHOOK_URL not set. Skipping webhook send, but checkpoint will advance.")
+        state["inode"] = inode
+        state["offset"] = new_offset
+        save_json(state_path, state)
+        return 0
+
+    try:
+        for c in chunks:
+            post_webhook(webhook_url, c)
+        print(f"[INFO] Sent {len(chunks)} webhook message(s).")
+    except (HTTPError, URLError) as e:
+        print(f"[ERROR] Webhook send failed: {e}")
+        return 2
+
+    state["inode"] = inode
+    state["offset"] = new_offset
+    save_json(state_path, state)
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
