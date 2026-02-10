@@ -1,0 +1,8 @@
+[Unit]
+Description = ssh bruteforce detection script
+After = network.target
+
+[Service]
+Type = oneshot
+ExecStart=/usr/bin/python3 /home/bader/cyber-homelab/lab/kali-ubuntu-dual-nic/assessment/phase-4-detection-python/detector/ssh-bruteforce-detector.py --input /var/log/auth.log
+WorkingDirectory = /home/bader/cyber-homelab/lab/kali-ubuntu-dual-nic/assessment/phase-4-detection-python 

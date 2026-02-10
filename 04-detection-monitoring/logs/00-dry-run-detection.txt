@@ -1,0 +1,13 @@
+Command:
+python3 detector/ssh-bruteforce-detector.py --input logs/sample-auth.log -t 3 -w 20
+
+Output:
+[INFO] Parsed 10 failed login attempts from logs/sample-auth.log
+[ALERT] Detected 2 brute-force source(s):
+- IP 192.168.56.30 had 3 failures between 2026-01-08 06:37:28 and 2026-01-08 06:37:47
+- IP 192.168.56.1 had 3 failures between 2026-01-08 01:32:23 and 2026-01-08 01:32:23
+
+Notes:
+- Detection is sensitive to threshold and window tuning
+- Short windows reduce false positives
+- Grouping by source IP correctly identifies attacker behavior
