@@ -1,103 +1,176 @@
-# Kali–Ubuntu Dual-NIC Homelab
+# Kali-Ubuntu Dual-NIC Security Lab
 
-## Overview
-This lab documents a hands-on cybersecurity homelab built using VirtualBox with Kali Linux and Ubuntu Server. The environment is designed to simulate a segmented network using dual network interfaces, enabling controlled internal communication while maintaining external internet access.
+A complete security automation workflow demonstrating attack simulation, detection, defense, and automated response in a segmented homelab environment.
 
-The lab focuses on practical networking concepts, SSH access, and foundational system hardening techniques commonly used in real-world environments.
-
----
-
-## Lab Goals
-- Design a segmented virtual network using VirtualBox
-- Configure dual-NIC virtual machines with distinct roles
-- Assign static IP addresses on an internal network
-- Enable external internet access via NAT
-- Validate connectivity and SSH access between host and VMs
-- Document configuration, validation, and troubleshooting steps
+This lab builds a **defense-in-depth security architecture** from scratch, progressing from controlled attack scenarios to fully automated incident response with reproducible infrastructure and documented evidence.
 
 ---
 
-## Environment
-- Host OS: Windows 11 (Surface Pro 9)
-- Hypervisor: Oracle VirtualBox
-- Attacker VM: Kali Linux
-- Server VM: Ubuntu Server
+## Lab Overview
+
+This project simulates a real-world security operations workflow using VirtualBox virtual machines:
+
+- **Kali Linux (192.168.56.30)** – Attacker  
+- **Ubuntu Server (192.168.56.20)** – Target with layered defenses  
+- **Dual-NIC Architecture** – Isolated internal network + controlled external access  
+
+The lab demonstrates infrastructure hardening, attack observation, threat detection, defensive controls, and automated incident response.
 
 ---
 
-## Network Topology
-Each virtual machine uses two network adapters:
+## Workflow Phases
 
-### Adapter 1: Host-Only Network (Internal)
-- Purpose: Isolated internal communication between host and VMs
-- Subnet: `192.168.56.0/24`
+### Phase 01: Environment Setup
 
-| Device | Interface | IP Address |
-|------|----------|-----------|
-| Host (Windows) | VirtualBox Host-Only | 192.168.56.1 |
-| Kali Linux | eth0 | 192.168.56.30 |
-| Ubuntu Server | enp0s3 | 192.168.56.20 |
+Segmented, hardened network environment with predictable IP addressing and restricted SSH access.
 
-### Adapter 2: NAT (External)
-- Purpose: Internet access for updates and package installation
-- IP assignment: DHCP
+**Key Outcomes**
+
+- Dual-NIC architecture (host-only + NAT)
+- Static internal IP addressing
+- SSH hardening
+- Validated baseline connectivity
 
 ---
 
-## Network Configuration Summary
-- Kali Linux:
-  - `eth0`: Static IP on host-only network
-  - `eth1`: DHCP via NAT
+### Phase 02: Attack Simulation
 
-- Ubuntu Server:
-  - `enp0s3`: Static IP configured via Netplan
-  - `enp0s8`: DHCP via NAT
+Controlled SSH brute-force traffic to generate observable security events.
 
-This design mirrors real-world segmented environments where internal services are isolated while maintaining controlled external connectivity.
+**Key Outcomes**
 
----
-
-## Validation
-Connectivity and access were validated using:
-- ICMP ping between host and VMs
-- ICMP ping between Kali and Ubuntu
-- SSH access from host to both VMs
-- SSH access from Kali to Ubuntu
-
-Evidence of successful validation is documented in the `evidence/` directory.
+- Hydra brute-force execution
+- Authentication log generation
+- Attack traffic correlation
+- Evidence collection
 
 ---
 
-## Security Considerations
-- Internal traffic is isolated to the host-only network
-- External exposure is limited to NAT-controlled access
-- SSH is used for secure remote administration
-- Firewall rules and access controls are documented separately
+### Phase 03: Defense Hardening
+
+Layered defensive controls to reduce attack surface and block malicious traffic.
+
+**Key Outcomes**
+
+- UFW firewall segmentation
+- Fail2Ban intrusion prevention
+- Defense validation
+- Reduced attack surface
 
 ---
 
-## Troubleshooting
-Several issues were encountered and resolved during setup, including:
-- Netplan configuration persistence
-- Interface naming inconsistencies
-- cloud-init network overrides
-- Initial connectivity failures due to adapter ordering
+### Phase 04: Detection & Monitoring
 
-Detailed resolutions are documented in `troubleshooting.md`.
+Python-based detection logic to identify and alert on SSH brute-force patterns.
 
----
+**Key Outcomes**
 
-## What I Learned
-- How to design and implement segmented virtual networks
-- Practical differences between host-only and NAT networking
-- Static vs dynamic IP addressing in Linux environments
-- Debugging real network configuration issues
-- Importance of documenting reproducible infrastructure
+- Automated log analysis
+- Stateful attack tracking
+- Alert generation
+- Systemd service integration
 
 ---
 
-## Next Steps
-- Harden SSH configuration
-- Implement firewall rules (UFW)
-- Add logging and monitoring
-- Expand lab with IDS/IPS or firewall appliance
+### Phase 05: Automated Response
+
+Event-driven response actions triggered by detection alerts.
+
+**Key Outcomes**
+
+- Webhook-based notifications
+- External integration (Discord)
+- Automated incident response
+- End-to-end automation pipeline
+
+---
+
+# Security Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Security Workflow                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  Attack         Detection        Defense        Response     │
+│  Occurs    →    Identifies  →    Blocks    →    Notifies     │
+│                                                               │
+│  Phase 02       Phase 04         Phase 03       Phase 05     │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+
+Network Segmentation (Phase 01):
+  Internal: 192.168.56.0/24 (Host-Only)
+  External: NAT (DHCP)
+
+Defensive Layers (Phase 03):
+  Layer 1: UFW Firewall (Network)
+  Layer 2: Fail2Ban (Application)
+
+Detection & Response (Phases 04-05):
+  Monitor → Detect → Alert → Notify
+```
+
+---
+
+## Technical Stack
+
+### Infrastructure
+
+- VirtualBox 7.x
+- Kali Linux 2024.x
+- Ubuntu Server 24.04 LTS
+
+### Security Tools
+
+- Hydra
+- UFW
+- Fail2Ban
+
+### Automation
+
+- Python 3
+- Systemd
+- Discord Webhooks
+
+---
+
+## Key Demonstrations
+
+- Network segmentation with dual-NIC architecture
+- Defense-in-depth (firewall + IPS)
+- Python-based attack detection
+- Automated response without manual intervention
+- Systemd-managed continuous monitoring
+- Webhook-based external integration
+
+---
+
+## Use Cases
+
+- Security engineering portfolio
+- SOC analyst training
+- DevSecOps learning
+- Interview discussion material
+- Expandable homelab foundation
+
+---
+
+## Getting Started
+
+1. Review Phase 01 to understand the architecture.
+2. Follow phases sequentially.
+3. Examine evidence for validation.
+4. Adapt configurations as needed.
+
+Each phase README contains full implementation details and validation steps.
+
+---
+
+## Project Highlights
+
+- Complete automation pipeline from attack through response
+- Production-style systemd orchestration
+- Structured validation workflow
+- Professional documentation and evidence collection
+- Extensible security architecture
