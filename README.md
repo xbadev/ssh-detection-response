@@ -89,14 +89,14 @@ Event-driven response actions triggered by detection alerts.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Security Workflow                        │
+│                     Security Workflow                       │
 ├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Attack         Detection        Defense        Response     │
-│  Occurs    →    Identifies  →    Blocks    →    Notifies     │
-│                                                               │
-│  Phase 02       Phase 04         Phase 03       Phase 05     │
-│                                                               │
+│                                                             │
+│  Attack         Detection        Defense        Response    │
+│  Occurs    →    Identifies  →    Blocks    →    Notifies    │
+│                                                             │
+│  Phase 02       Phase 04         Phase 03       Phase 05    │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 
 Network Segmentation (Phase 01):
