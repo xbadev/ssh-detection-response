@@ -20,51 +20,43 @@ The lab demonstrates infrastructure hardening, attack observation, threat detect
 
 ## Workflow Phases
 
-### Phase 01: Environment Setup
+### [Phase 01: Environment Setup](01-environment-setup/)
+Establish a segmented, hardened network environment with predictable IP addressing and restricted SSH access.
 
-Segmented, hardened network environment with predictable IP addressing and restricted SSH access.
-
-**Key Outcomes**
-
-- Dual-NIC architecture (host-only + NAT)
+**Key Outcomes:**
+- Dual-NIC network architecture (host-only + NAT)
 - Static internal IP addressing
-- SSH hardening
+- SSH configuration hardening
 - Validated baseline connectivity
 
 ---
 
-### Phase 02: Attack Simulation
+### [Phase 02: Attack Simulation](02-attack-simulation/)
+Generate controlled SSH brute-force attack traffic to create observable security events.
 
-Controlled SSH brute-force traffic to generate observable security events.
-
-**Key Outcomes**
-
-- Hydra brute-force execution
+**Key Outcomes:**
+- Hydra SSH brute-force execution
 - Authentication log generation
 - Attack traffic correlation
 - Evidence collection
 
 ---
 
-### Phase 03: Defense Hardening
+### [Phase 03: Defense Hardening](03-defense-hardening/)
+Implement layered defensive controls to reduce attack surface and block malicious traffic.
 
-Layered defensive controls to reduce attack surface and block malicious traffic.
-
-**Key Outcomes**
-
-- UFW firewall segmentation
+**Key Outcomes:**
+- UFW firewall network segmentation
 - Fail2Ban intrusion prevention
-- Defense validation
-- Reduced attack surface
+- Defense validation and testing
+- Attack surface reduction
 
 ---
 
-### Phase 04: Detection & Monitoring
+### [Phase 04: Detection & Monitoring](04-detection-monitoring/)
+Develop Python-based detection logic to identify and alert on SSH brute-force patterns.
 
-Python-based detection logic to identify and alert on SSH brute-force patterns.
-
-**Key Outcomes**
-
+**Key Outcomes:**
 - Automated log analysis
 - Stateful attack tracking
 - Alert generation
@@ -72,20 +64,18 @@ Python-based detection logic to identify and alert on SSH brute-force patterns.
 
 ---
 
-### Phase 05: Automated Response
+### [Phase 05: Automated Response](05-automated-response/)
+Close the security automation loop with event-driven response actions.
 
-Event-driven response actions triggered by detection alerts.
-
-**Key Outcomes**
-
+**Key Outcomes:**
 - Webhook-based notifications
-- External integration (Discord)
+- External system integration (Discord)
 - Automated incident response
-- End-to-end automation pipeline
+- Complete automation pipeline
 
 ---
 
-# Security Architecture
+## Security Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
