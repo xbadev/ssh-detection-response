@@ -118,14 +118,6 @@ Detection & Response (Phases 04-05):
 - Systemd-managed continuous monitoring
 - Webhook-based external integration
 
-## Use Cases
-
-- Security engineering portfolio
-- SOC analyst training
-- DevSecOps learning
-- Interview discussion material
-- Expandable homelab foundation
-
 ## Getting Started
 
 1. Review Phase 01 to understand the architecture.
@@ -134,11 +126,3 @@ Detection & Response (Phases 04-05):
 4. Adapt configurations as needed.
 
 Each phase README contains full implementation details and validation steps.
-
-## Project Highlights
-
-- Complete automation pipeline from attack through response
-- Production-style systemd orchestration
-- Structured validation workflow
-- Professional documentation and evidence collection
-- Extensible security architecture
