@@ -16,8 +16,6 @@ This project simulates a real-world security operations workflow using VirtualBo
 
 The lab demonstrates infrastructure hardening, attack observation, threat detection, defensive controls, and automated incident response.
 
----
-
 ## Workflow Phases
 
 ### [Phase 01: Environment Setup](01-environment-setup/)
@@ -29,8 +27,6 @@ Establish a segmented, hardened network environment with predictable IP addressi
 - SSH configuration hardening
 - Validated baseline connectivity
 
----
-
 ### [Phase 02: Attack Simulation](02-attack-simulation/)
 Generate controlled SSH brute-force attack traffic to create observable security events.
 
@@ -39,8 +35,6 @@ Generate controlled SSH brute-force attack traffic to create observable security
 - Authentication log generation
 - Attack traffic correlation
 - Evidence collection
-
----
 
 ### [Phase 03: Defense Hardening](03-defense-hardening/)
 Implement layered defensive controls to reduce attack surface and block malicious traffic.
@@ -51,8 +45,6 @@ Implement layered defensive controls to reduce attack surface and block maliciou
 - Defense validation and testing
 - Attack surface reduction
 
----
-
 ### [Phase 04: Detection & Monitoring](04-detection-monitoring/)
 Develop Python-based detection logic to identify and alert on SSH brute-force patterns.
 
@@ -62,8 +54,6 @@ Develop Python-based detection logic to identify and alert on SSH brute-force pa
 - Alert generation
 - Systemd service integration
 
----
-
 ### [Phase 05: Automated Response](05-automated-response/)
 Close the security automation loop with event-driven response actions.
 
@@ -72,8 +62,6 @@ Close the security automation loop with event-driven response actions.
 - External system integration (Discord)
 - Automated incident response
 - Complete automation pipeline
-
----
 
 ## Security Architecture
 
@@ -101,8 +89,6 @@ Detection & Response (Phases 04-05):
   Monitor → Detect → Alert → Notify
 ```
 
----
-
 ## Technical Stack
 
 ### Infrastructure
@@ -123,8 +109,6 @@ Detection & Response (Phases 04-05):
 - Systemd
 - Discord Webhooks
 
----
-
 ## Key Demonstrations
 
 - Network segmentation with dual-NIC architecture
@@ -134,8 +118,6 @@ Detection & Response (Phases 04-05):
 - Systemd-managed continuous monitoring
 - Webhook-based external integration
 
----
-
 ## Use Cases
 
 - Security engineering portfolio
@@ -143,8 +125,6 @@ Detection & Response (Phases 04-05):
 - DevSecOps learning
 - Interview discussion material
 - Expandable homelab foundation
-
----
 
 ## Getting Started
 
@@ -154,8 +134,6 @@ Detection & Response (Phases 04-05):
 4. Adapt configurations as needed.
 
 Each phase README contains full implementation details and validation steps.
-
----
 
 ## Project Highlights
 
