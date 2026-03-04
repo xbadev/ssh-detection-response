@@ -23,7 +23,7 @@ Confirmed Kali can reach the Ubuntu server before launching the attack:
 ping -c 4 192.168.56.20
 ```
 
-![Kali to Ubuntu connectivity](evidence/screenshots/kali-to-ubuntu-connectivity.png)
+![Kali to Ubuntu connectivity](evidence/kali-to-ubuntu-connectivity.png)
 
 ### 2. Hydra Brute-Force Execution
 
@@ -35,7 +35,7 @@ hydra -l bader -P pw.txt ssh://192.168.56.20 -t 4 -V
 
 Result: all 3 attempts failed as expected — no valid passwords found.
 
-![Hydra attack](evidence/screenshots/kali-hydra-attack.png)
+![Hydra attack](evidence/kali-hydra-attack.png)
 
 ### 3. Log Observation on Ubuntu
 
@@ -47,7 +47,7 @@ sudo tail -f /var/log/auth.log
 
 Authentication failures from `192.168.56.30` logged clearly — failed password attempts for user `bader` with direct correlation to each Hydra attempt:
 
-![Auth log failures](evidence/screenshots/ubuntu-authlog-failures.png)
+![Auth log failures](evidence/ubuntu-authlog-failures.png)
 
 ---
 
