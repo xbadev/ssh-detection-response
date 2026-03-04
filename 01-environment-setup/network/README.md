@@ -1,87 +1,45 @@
-# Network Architecture
+# Network Configuration
 
-This section documents the network design used in the Kali–Ubuntu dual-NIC homelab.  
-The goal of this architecture is to **intentionally separate internal communication from external access** in order to support realistic attack simulation, observation, and defensive validation.
-
-The network design is a foundational component of the security assessment workflow used throughout later phases.
+The lab uses a dual-NIC design per VM to separate internal lab traffic from external internet access.
 
 ---
 
-## Network Overview
+## VirtualBox Adapters
 
-Each virtual machine is configured with **two VirtualBox network adapters**:
+| Adapter | Type | Purpose | Visibility |
+|---------|------|---------|------------|
+| Adapter 1 | Host-Only | Internal lab communication, SSH, attack simulation | Host ↔ VMs only |
+| Adapter 2 | NAT | Internet access for updates and packages | VM → Internet only |
 
-- **Host-Only Adapter (Internal Network)**
-  - Isolated communication between the host and virtual machines
-  - Used for management, SSH access, and controlled lateral testing
-
-- **NAT Adapter (External Network)**
-  - Provides outbound internet access only
-  - Prevents direct inbound exposure from external networks
-
-This dual-NIC approach mirrors segmented enterprise environments and reduces unnecessary attack surface while preserving usability.
+Host-Only provides an isolated internal network (no internet exposure). NAT provides outbound-only access (no inbound from external networks).
 
 ---
 
-## IP Addressing Scheme
+## IP Addressing Plan
 
-The internal network uses a **static IP addressing model** to ensure predictable communication and reliable SSH connectivity between systems.
+### Host-Only Network (Internal)
 
-Detailed IP assignments and subnet layout are documented in:
+**Subnet:** `192.168.56.0/24` — all IPs statically assigned.
 
-- 📄 **[`ip-plan.md`](./ip-plan.md)**
+| Device | Interface | IP Address |
+|--------|-----------|------------|
+| Windows Host | VirtualBox Host-Only Adapter | 192.168.56.1 |
+| Kali Linux | eth0 | 192.168.56.30 |
+| Ubuntu Server | enp0s3 | 192.168.56.20 |
 
-This document defines:
-- Internal subnet selection
-- Interface-to-IP mappings
-- Static vs DHCP assignment decisions
-- Separation between internal and external traffic paths
+### NAT Network (External)
 
-### Evidence: Interface Addressing
+IP assigned via DHCP (VirtualBox-managed). Used only for outbound internet access.
 
-Screenshots verifying interface configuration and IP assignment are available here:
-
-- 📸 **[`evidence/kali-ip-a.png`](./evidence/kali-ip-a.png)**
-- 📸 **[`evidence/ubuntu-ip-a.png`](./evidence/ubuntu-ip-a.png)**
-
-These artifacts confirm that internal addressing aligns with the documented IP plan.
+| Device | Interface |
+|--------|-----------|
+| Kali Linux | eth1 |
+| Ubuntu Server | enp0s8 |
 
 ---
 
-## VirtualBox Adapter Configuration
+## Verification
 
-Each VM is configured with two distinct VirtualBox adapters to enforce traffic separation at the hypervisor level.
+![Kali interfaces](evidence/kali-ip-a.png)
 
-Full adapter configuration details and design rationale are documented in:
-
-- 📄 **[`virtualbox-adapters.md`](./virtualbox-adapters.md)**
-
-This document explains:
-- Adapter types and visibility scope
-- Traffic purpose per adapter
-- Security implications of each configuration choice
-- Why host-only and NAT were selected together
-
----
-
-## Design Rationale
-
-This network architecture was intentionally chosen to:
-
-- Maintain a **secure internal network** for management and observation
-- Allow **controlled external access** for updates and tooling
-- Prevent unintended exposure of internal services
-- Support realistic security testing scenarios
-- Mirror segmented environments commonly found in production networks
-
-By separating internal and external traffic paths, the lab provides a stable foundation for later attack simulation, detection, and defense phases.
-
----
-
-## Outcome
-
-At the conclusion of this section, the network environment is fully configured to:
-
-- Support controlled attack activity
-- Preserve clear visibility into traffic flow
-- Enable reliable validation of defensive controls in subsequent phases
+![Ubuntu interfaces](evidence/ubuntu-ip-a.png)
