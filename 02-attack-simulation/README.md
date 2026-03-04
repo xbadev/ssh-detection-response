@@ -1,176 +1,62 @@
-# Phase 02: Attack Simulation
+# SSH Brute-Force Attack Simulation
 
-This phase demonstrates a **controlled SSH brute-force attack** from Kali Linux against Ubuntu Server to generate observable security events.  
-The objective is to simulate realistic attack traffic, observe how failed authentication attempts appear in system logs, and establish a baseline for detection logic in later phases.
+Simulated a controlled SSH brute-force attack from Kali against the Ubuntu server using Hydra to generate observable authentication failures in system logs. This provides real attack data for detection and response in later phases.
 
-All attack activity is intentionally **non-destructive** and uses a minimal password list to ensure safe, controlled testing.
+## Environment
 
----
+| System | Role | IP Address |
+|--------|------|------------|
+| Kali VM | Attacker | 192.168.56.30 |
+| Ubuntu Server | Target (SSH on port 22) | 192.168.56.20 |
 
-## Objective
-
-Simulate a controlled SSH brute-force attempt from Kali Linux against Ubuntu Server and observe the resulting authentication logs.
-
-This phase demonstrates:
-- Internal network reachability (host-only network)
-- How failed SSH authentication attempts appear in Ubuntu logs
-- A safe, non-destructive attack simulation with a small password list
+**Tool:** Hydra v9.6 with a 3-password wordlist (`password`, `123456`, `letmein`) — minimal and non-destructive by design.
 
 ---
 
-## Attack Scenario
+## Steps
 
-**Attacker:**  
-- Kali Linux (`192.168.56.30`)
+### 1. Connectivity Validation
 
-**Target:**  
-- Ubuntu Server SSH (`192.168.56.20:22`)
-
-**Attack Tool:**  
-- Hydra v9.6
-
-**Wordlist:**  
-- Custom 3-password list (`pw.txt`):
-  - `password`
-  - `123456`
-  - `letmein`
-
-**Monitoring:**  
-- Real-time observation of `/var/log/auth.log` on Ubuntu using `sudo tail -f`
-
----
-
-## Attack Execution
-
-### Step 1: Connectivity Validation
-Before launching the attack, network reachability was confirmed from Kali to Ubuntu:
+Confirmed Kali can reach the Ubuntu server before launching the attack:
 
 ```bash
 ping -c 4 192.168.56.20
 ```
 
-**Result:** 4 packets transmitted, 4 received, 0% packet loss
+![Kali to Ubuntu connectivity](evidence/screenshots/kali-to-ubuntu-connectivity.png)
 
-📸 **Evidence:** [Kali to Ubuntu Connectivity](evidence/screenshots/kali-to-ubuntu-connectivity.png)
+### 2. Hydra Brute-Force Execution
 
----
-
-### Step 2: Wordlist Preparation
-A minimal wordlist was created with 3 weak passwords to simulate brute-force behavior without causing excessive log noise:
-
-```bash
-printf "password\n123456\nletmein\n" > pw.txt
-```
-
-This approach ensures the attack is **controlled and intentional**, demonstrating security observation without unnecessary system load.
-
----
-
-### Step 3: Hydra Brute-Force Execution
-Hydra was executed against the Ubuntu SSH service using the `bader` username:
+Ran Hydra against SSH targeting the `bader` account:
 
 ```bash
 hydra -l bader -P pw.txt ssh://192.168.56.20 -t 4 -V
 ```
 
-**Parameters:**
-- `-l bader` - Target username
-- `-P pw.txt` - Password wordlist
-- `-t 4` - 4 parallel tasks
-- `-V` - Verbose output showing each attempt
+Result: all 3 attempts failed as expected — no valid passwords found.
 
-**Result:** 0 valid passwords found (attack failed as expected)
+![Hydra attack](evidence/screenshots/kali-hydra-attack.png)
 
-📸 **Evidence:** [Hydra Attack Execution](evidence/screenshots/kali-hydra-attack.png)
+### 3. Log Observation on Ubuntu
 
----
-
-### Step 4: Ubuntu Log Observation
-During the attack, Ubuntu's authentication log was monitored in real-time:
+Monitored `/var/log/auth.log` in real-time during the attack:
 
 ```bash
 sudo tail -f /var/log/auth.log
 ```
 
-**Observed Events:**
-- Authentication failures from `rhost=192.168.56.30`
-- Failed password entries for user `bader`
-- Connection closed messages during pre-authentication
-- Clear correlation between Hydra attempts and log entries
+Authentication failures from `192.168.56.30` logged clearly — failed password attempts for user `bader` with direct correlation to each Hydra attempt:
 
-📸 **Evidence:** [Ubuntu Authentication Log Failures](evidence/screenshots/ubuntu-authlog-failures.png)
+![Auth log failures](evidence/screenshots/ubuntu-authlog-failures.png)
 
 ---
 
-## Attack Evidence Summary
+## Attack Log
 
-📄 **[Full Attack Log](evidence/ssh-bruteforce-attack-log.txt)**
-
-This log documents:
-- Target and attacker details
-- Connectivity validation results
-- Wordlist contents
-- Hydra command and output
-- Ubuntu log observations
+Full attack execution log with target details, Hydra output, and log observations: [`ssh-bruteforce-attack-log.txt`](evidence/ssh-bruteforce-attack-log.txt)
 
 ---
 
-## Design Rationale
+## Next
 
-This attack simulation was intentionally designed to:
-
-- **Generate observable security events** - Create failed authentication attempts in system logs
-- **Use a minimal attack surface** - Only 3 password attempts to avoid log flooding
-- **Maintain controlled execution** - Non-destructive testing with known outcomes
-- **Establish detection baseline** - Provide clear attack signatures for monitoring scripts
-- **Mirror real-world attack patterns** - SSH brute-force is a common reconnaissance technique
-
-By executing this controlled attack, later phases can develop detection logic and automated response mechanisms based on real attack data.
-
----
-
-## Validation
-
-Attack execution and log observation were validated through:
-
-✅ **Network reachability confirmed** - ICMP connectivity before attack  
-✅ **Attack executed successfully** - Hydra completed all password attempts  
-✅ **Logs captured authentication failures** - Ubuntu recorded all failed attempts from Kali IP  
-✅ **No successful authentication** - Attack failed as designed  
-✅ **Correlation verified** - Clear mapping between attack timing and log entries  
-
----
-
-## Outcome
-
-At the conclusion of this phase:
-
-- SSH brute-force attack traffic was successfully generated
-- Ubuntu authentication logs captured all failed login attempts
-- Attack signatures are clearly observable and correlatable
-- The environment is ready for detection logic development
-
-This attack data enables Phase 03 (Detection & Observation) to build monitoring scripts that identify and alert on similar attack patterns.
-
----
-
-## Documentation Structure
-
-```
-02-attack-simulation/
-├── README.md                                      # This document
-└── evidence/
-    ├── ssh-bruteforce-attack-log.txt             # Complete attack execution log
-    └── screenshots/
-        ├── kali-to-ubuntu-connectivity.png       # Network reachability validation
-        ├── kali-hydra-attack.png                 # Hydra execution and results
-        └── ubuntu-authlog-failures.png           # Authentication log observations
-```
-
----
-
-## Next Phase
-
-**→ [Phase 03: Detection & Observation](../03-detection-observation/)**
-
-With attack signatures now generated and documented, the next phase develops detection logic to identify brute-force attempts in real-time and generate security alerts.
+Attack traffic is generated and authentication failures are visible in the logs. The next phase introduces defensive hardening — configuring UFW and Fail2Ban to protect the SSH service before building detection logic.
