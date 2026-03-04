@@ -51,12 +51,6 @@ Authentication failures from `192.168.56.30` logged clearly — failed password 
 
 ---
 
-## Attack Log
-
-Full attack execution log with target details, Hydra output, and log observations: [`ssh-bruteforce-attack-log.txt`](evidence/ssh-bruteforce-attack-log.txt)
-
----
-
 ## Next
 
 Attack traffic is generated and authentication failures are visible in the logs. The next phase introduces defensive hardening — configuring UFW and Fail2Ban to protect the SSH service before building detection logic.
