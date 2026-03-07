@@ -68,7 +68,7 @@ Fail2Ban detected the brute-force pattern and banned Kali's IP:
 
 ### Log Confirmation
 
-Auth log showing firewall denials and Fail2Ban actions:
+Auth log capturing failed SSH authentication attempts from Kali (192.168.56.30):
 
 ![Auth log validation](evidence/ubuntu-auth-log-validation.png)
 
