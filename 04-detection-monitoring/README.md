@@ -1,185 +1,72 @@
-# Phase 04: Detection & Monitoring
+# SSH Brute-Force Detection & Monitoring
 
-This phase develops **Python-based detection logic** to identify SSH brute-force attacks in real-time by monitoring authentication logs.  
-The objective is to implement automated detection capabilities that analyze log patterns, generate security alerts, and maintain persistent state tracking across monitoring sessions.
+Built a Python detection script that parses `/var/log/auth.log` for failed SSH authentication patterns, tracks state across runs to avoid duplicate alerts, and runs continuously via systemd service and timer.
 
-The detection script runs as a systemd service with timer-based execution, enabling continuous monitoring without manual intervention.
+## Scripts & Config
 
----
+| File | Purpose |
+|------|---------|
+| [`detector/ssh-bruteforce-detector.py`](detector/ssh-bruteforce-detector.py) | Detection script — parses auth.log, aggregates failures by source IP, generates alerts |
+| [`systemd/ssh-bruteforce-detector.service`](systemd/ssh-bruteforce-detector.service) | Systemd service unit — defines execution context |
+| [`systemd/ssh-bruteforce-detector.timer`](systemd/ssh-bruteforce-detector.timer) | Systemd timer unit — schedules execution every 5 minutes |
+| [`.gitignore`](.gitignore) | Excludes runtime output (`state.json`, `alerts.log`) from version control |
 
-## Objective
+## Environment
 
-Implement automated detection and alerting for SSH brute-force attacks through real-time log analysis.
+| System | Role | IP Address |
+|--------|------|------------|
+| Kali VM | Attacker | 192.168.56.30 |
+| Ubuntu Server | Target (SSH on port 22) | 192.168.56.20 |
 
-This phase demonstrates:
-- Python-based log parsing and pattern matching
-- Stateful detection tracking failed authentication attempts
-- Automated alert generation for security events
-- Systemd service integration for continuous monitoring
-- Persistent state management across service restarts
-
----
-
-## Detection Strategy
-
-The detection system monitors `/var/log/auth.log` for SSH authentication failures and tracks repeated failed attempts from the same source IP.
-
-**Detection Logic:**
-- Parse authentication logs for failed SSH login attempts
-- Track failed attempt count per source IP
-- Generate alerts when threshold is exceeded (3+ failures)
-- Maintain persistent state between monitoring runs
-- Output alerts to structured log file
-
-**Continuous Monitoring:**
-- Systemd service executes detection script periodically
-- Timer-based scheduling (every 5 minutes)
-- Persistent state tracking across restarts
-- Automated alert generation without manual intervention
+Starting point: Phase 03 hardened SSH with UFW and Fail2Ban. This phase adds detection and monitoring on top of those defenses.
 
 ---
 
-## Implementation
+## Detection Logic
 
-### Detection Script
+The script monitors for failed SSH login attempts and flags brute-force behavior:
 
-The core detection logic is implemented in Python and monitors authentication logs for brute-force patterns.
-
-**Script:** [`detector/ssh-bruteforce-detector.py`](detector/ssh-bruteforce-detector.py)
-
-**Key Functionality:**
-- Parses `/var/log/auth.log` for failed SSH authentication attempts
-- Extracts source IP addresses from failed login entries
-- Tracks failure count per IP using persistent state file
-- Generates alerts when IP exceeds threshold (3 failures)
-- Outputs alerts to `alerts.log` with timestamp and IP details
+- Parses Event ID `Failed password` entries from `/var/log/auth.log`
+- Extracts source IP, username, and timestamp from each failure
+- Aggregates by source IP within a configurable time window
+- Alerts when a source exceeds the failure threshold (default: 3 attempts)
+- Writes alerts to `alerts.log` with source IP, failure count, and time range
+- Tracks alerted IPs in `state.json` to prevent duplicate alerts across runs
 
 ---
 
-### Sample Logs for Testing
+## Testing & Validation
 
-Sample authentication logs are provided to demonstrate detection logic during development and testing.
+### Dry Run Against Sample Data
 
-**Sample Log:** [`logs/sample-auth.log`](logs/sample-auth.log)
+Tested the script against sample auth log data to validate parsing and threshold logic:
 
-This log contains realistic SSH authentication failure patterns for script validation.
+![Dry run detection](screenshots/00-python-detection-dry-run.png)
 
-📂 **[Logs Documentation](logs/)** - See logs folder README for testing workflow details
+### Live Attack from Kali
 
----
+Ran Hydra against the Ubuntu server to generate real brute-force traffic:
 
-### Detection Output
+![Hydra attack](screenshots/01-kali-hydra-attack.png)
 
-The detection script generates two types of output files:
+Auth log capturing the failed authentication attempts:
 
-**Alert Log:** `output/alerts.log`  
-Records all detected brute-force attempts with timestamp and source IP information.
+![Auth log failures](screenshots/02-ubuntu-authlog-failures.png)
 
-**State File:** `output/state.json`  
-Maintains persistent tracking of failed attempt counts per IP across script executions.
+### Detection + State Deduplication
 
-📂 **[Output Documentation](output/)** - See output folder README for file format details and gitignore rationale
+Ran the script against live logs — brute-force detected and alerted. Second run confirmed state persistence: same attack window was deduplicated, no duplicate alert generated:
 
----
-
-### Systemd Service Integration
-
-The detection script runs continuously via systemd service and timer units, enabling automated monitoring without manual execution.
-
-**Service Unit:** [`systemd/ssh-bruteforce-detector.service`](systemd/ssh-bruteforce-detector.service)  
-Defines how the detection script executes (user, working directory, execution command)
-
-**Timer Unit:** [`systemd/ssh-bruteforce-detector.timer`](systemd/ssh-bruteforce-detector.timer)  
-Schedules periodic execution (every 5 minutes)
-
-**Why Service + Timer:**
-- **Service** defines *what* to run and *how* to run it
-- **Timer** defines *when* to run it (scheduling)
-- Together they enable continuous, automated monitoring
-- Script runs periodically without manual intervention
-- System automatically restarts monitoring after reboot
-
-This architecture enables **Phase 05 (Automated Response)** to trigger defensive actions based on detection alerts.
+![Manual test and dedup](screenshots/03-manual-test-and-dedup-check.png)
 
 ---
 
-## Validation
+## Systemd Integration
 
-Detection capabilities were validated through controlled testing:
-
-✅ **Script parses logs correctly** - Extracts failed SSH attempts from auth.log  
-✅ **State tracking persists** - Failure counts maintained across script runs  
-✅ **Alerts generated accurately** - Threshold-based alerting functions as designed  
-✅ **Systemd integration works** - Service executes on schedule via timer  
-✅ **Detection observes real attacks** - Captures brute-force attempts from Phase 02  
-
-**Validation Evidence:**
-
-- 📸 [Python Detection Dry Run](screenshots/00-python-detection-dry-run.png) - Initial script testing against sample logs
-- 📸 [Kali Hydra Attack](screenshots/01-kali-hydra-attack.png) - Live attack traffic for detection validation
-- 📸 [Ubuntu Auth Log Failures](screenshots/02-ubuntu-authlog-failures.png) - Authentication log showing detected failures
-- 📸 [Manual Test and Deduplication Check](screenshots/03-manual-test-and-dedup-check.png) - Verification of state persistence and deduplication logic
+The script runs as a systemd service triggered by a timer every 5 minutes. The service runs with appropriate permissions to read the security log, operates independently of user sessions, and persists across reboots.
 
 ---
 
-## Design Rationale
+## Next
 
-This detection system was designed to:
-
-- **Enable automated monitoring** - Continuous log analysis without manual oversight
-- **Maintain persistent state** - Track attack patterns across monitoring intervals
-- **Generate actionable alerts** - Provide structured output for response automation
-- **Integrate with systemd** - Leverage native Linux service management
-- **Support response automation** - Provide foundation for Phase 05 automated blocking
-
-By implementing detection as a systemd service, the monitoring infrastructure runs continuously and survives system restarts, providing reliable security event visibility.
-
----
-
-## Outcome
-
-At the conclusion of this phase:
-
-- Automated detection script monitors SSH authentication logs continuously
-- Failed login attempts are tracked and alerted based on threshold rules
-- Systemd integration ensures persistent monitoring across reboots
-- Alert output is structured and ready for automated response integration
-
-This detection foundation enables Phase 05 (Automated Response) to implement defensive actions triggered by detection alerts.
-
----
-
-## Documentation Structure
-
-```
-04-detection-monitoring/
-├── README.md                                      # This document
-├── detector/
-│   └── ssh-bruteforce-detector.py                # Detection script
-├── logs/
-│   ├── README.md                                  # Testing workflow documentation
-│   ├── sample-auth.log                            # Sample logs for testing
-│   ├── 00-dry-run-detection.txt                   # Initial test run output
-│   ├── 01-detector-first-run.txt                  # First live detection output
-│   ├── 02-detector-second-run.txt                 # Second run showing persistence
-│   └── 03-systemd-journal-snippet.txt             # Systemd execution logs
-├── output/
-│   ├── README.md                                  # Output files documentation
-│   └── .gitignore                                 # Excludes state.json and alerts.log
-├── systemd/
-│   ├── ssh-bruteforce-detector.service           # Systemd service unit
-│   └── ssh-bruteforce-detector.timer             # Systemd timer unit
-└── screenshots/
-    ├── 00-python-detection-dry-run.png
-    ├── 01-kali-hydra-attack.png
-    ├── 02-ubuntu-authlog-failures.png
-    └── 03-manual-test-and-dedup-check.png
-```
-
----
-
-## Next Phase
-
-**→ [Phase 05: Automated Response](../05-automated-response/)**
-
-With detection capabilities in place, the next phase implements automated response actions that execute when brute-force attacks are detected, closing the security automation loop.
+Detection is running continuously and producing structured alerts. The next phase builds automated response — reading those alerts and triggering defensive actions (firewall blocking, webhook notifications) when brute-force activity is detected.
