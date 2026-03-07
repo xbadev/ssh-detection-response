@@ -8,7 +8,7 @@ Built a Python detection script that parses `/var/log/auth.log` for failed SSH a
 |------|---------|
 | [`detector/ssh-bruteforce-detector.py`](detector/ssh-bruteforce-detector.py) | Detection script — parses auth.log, aggregates failures by source IP, generates alerts |
 | [`systemd/ssh-bruteforce-detector.service`](systemd/ssh-bruteforce-detector.service) | Systemd service unit — defines execution context |
-| [`systemd/ssh-bruteforce-detector.timer`](systemd/ssh-bruteforce-detector.timer) | Systemd timer unit — schedules execution every 5 minutes |
+| [`systemd/ssh-bruteforce-detector.timer`](systemd/ssh-bruteforce-detector.timer) | Systemd timer unit — schedules execution every minutes |
 | [`.gitignore`](.gitignore) | Excludes runtime output (`state.json`, `alerts.log`) from version control |
 
 ## Environment
@@ -63,7 +63,7 @@ Ran the script against live logs — brute-force detected and alerted. Second ru
 
 ## Systemd Integration
 
-The script runs as a systemd service triggered by a timer every 5 minutes. The service runs with appropriate permissions to read the security log, operates independently of user sessions, and persists across reboots.
+The script runs as a systemd service triggered by a timer every minutes. The service runs with appropriate permissions to read the security log, operates independently of user sessions, and persists across reboots.
 
 ---
 
