@@ -1,152 +1,79 @@
-# Phase 03: Defense Hardening
+# Defense Hardening (UFW + Fail2Ban)
 
-This phase implements **layered defensive controls** to protect Ubuntu Server from the SSH brute-force attacks demonstrated in Phase 02.  
-The objective is to enforce network-level access restrictions and deploy automated intrusion prevention to reduce attack surface and block malicious authentication attempts.
+Implemented two layers of SSH defense on the Ubuntu server: UFW to restrict SSH access to the internal network only, and Fail2Ban to automatically ban IPs after repeated failed login attempts.
 
-All defensive measures are validated through controlled testing to confirm proper enforcement and minimal impact on legitimate access.
+## Environment
 
----
+| System | Role | IP Address |
+|--------|------|------------|
+| Kali VM | Attacker | 192.168.56.30 |
+| Ubuntu Server | Target (SSH on port 22) | 192.168.56.20 |
+| Host machine | Authorized source | 192.168.56.1 |
 
-## Objective
-
-Implement defense-in-depth controls to mitigate SSH brute-force attacks while preserving legitimate administrative access.
-
-This phase demonstrates:
-- Network-level access control using UFW firewall
-- Automated intrusion prevention using Fail2Ban
-- Validation that defenses block attacks without disrupting authorized access
-- Defense-in-depth security architecture
+Starting point: Phase 02 generated SSH brute-force traffic and confirmed authentication failures are logged in `/var/log/auth.log`.
 
 ---
 
-## Defensive Strategy
+## Layer 1 — UFW Firewall
 
-Two complementary defensive layers are deployed:
+Restricted SSH to the internal Host-Only subnet only:
 
-**Layer 1: Network Perimeter Control (UFW)**  
-Restrict SSH access to trusted internal network only, blocking all external SSH attempts at the firewall level before authentication is attempted.
-
-**Layer 2: Intrusion Prevention (Fail2Ban)**  
-Monitor authentication logs in real-time and automatically ban IPs after repeated failed login attempts, providing time-based blocking for detected brute-force behavior.
-
-Together, these controls implement **defense-in-depth**: if network controls are bypassed, intrusion prevention provides a second line of defense.
-
----
-
-## Defense Implementation
-
-### UFW Firewall Configuration
-
-Ubuntu's Uncomplicated Firewall (UFW) was configured to restrict SSH access to the internal host-only network (`192.168.56.0/24`).
-
-**Firewall Rule:**
 ```bash
 sudo ufw allow from 192.168.56.0/24 to any port 22
 ```
 
-**Configuration Details:** [`ufw/rules.txt`](ufw/rules.txt)
+SSH is no longer globally reachable — only the trusted internal network can attempt authentication.
 
-**Impact:**
-- SSH is only accessible from the trusted internal network
-- External networks (including the NAT adapter) cannot reach SSH
-- Attack surface is reduced at the network layer
-
-**Evidence:**
-- 📸 [UFW Rules and Status](ufw/ufw-rules-and-status.png) - Firewall configuration and active enforcement
+![UFW rules and status](evidence/ufw-rules-and-status.png)
 
 ---
 
-### Fail2Ban Intrusion Prevention
+## Layer 2 — Fail2Ban
 
-Fail2Ban was deployed to monitor `/var/log/auth.log` and automatically ban IPs exhibiting brute-force behavior.
+Deployed Fail2Ban to monitor `/var/log/auth.log` and automatically ban IPs exhibiting brute-force behavior.
 
-**Configuration:** [`fail2ban/jail.local`](fail2ban/jail.local)
+**Config:** [`jail.local`](jail.local)
 
-**Key Settings:**
-- **Service:** SSH (sshd)
-- **Log Path:** `/var/log/auth.log`
-- **Max Retries:** 3 failed attempts
-- **Find Time:** 60 seconds
-- **Ban Time:** 300 seconds (5 minutes)
+| Setting | Value |
+|---------|-------|
+| Max retries | 3 failed attempts |
+| Find time | 60 seconds |
+| Ban time | 300 seconds (5 minutes) |
 
-**Behavior:**
-- Monitors authentication logs continuously
-- Detects patterns of repeated failed login attempts
-- Automatically adds offending IPs to firewall ban list
-- Releases bans after configured time period
+Fail2Ban active and monitoring the SSH jail:
 
-**Evidence:**
-- 📸 [Fail2Ban Status](fail2ban/fail2ban-status.png) - Service active and monitoring
+![Fail2Ban status](evidence/fail2ban-status.png)
 
 ---
 
 ## Validation
 
-Defensive controls were validated through controlled SSH connection tests from multiple sources:
+### Authorized Access (Host → Ubuntu)
 
-✅ **UFW firewall enforced** - SSH accessible from host-only network, blocked from external sources  
-✅ **Fail2Ban service active** - Monitoring authentication logs and banning offending IPs  
-✅ **Legitimate access preserved** - Authorized connections from internal network still function  
-✅ **Attack traffic blocked** - Brute-force attempts successfully prevented
+SSH from the host machine still works — legitimate internal access preserved:
 
-**Validation Evidence:**
+![Host SSH allowed](evidence/host-ssh-access-still-allowed.png)
 
-- 📸 [Host SSH Access Still Allowed](evidence/host-ssh-access-still-allowed.png) - Confirms authorized access from internal network preserved
-- 📸 [Kali SSH Refused](evidence/kali-ssh-refused.png) - Confirms unauthorized access blocked by firewall
-- 📸 [Fail2Ban Client Banned](evidence/fail2ban-client-banned-kali-ip.png) - Confirms Fail2Ban detecting and banning attack sources
-- 📸 [Ubuntu Auth Log Validation](evidence/ubuntu-auth-log-validation.png) - Confirms logs show firewall denials and Fail2Ban actions
+### Unauthorized Access (Kali → Ubuntu)
 
----
+SSH from Kali refused at the firewall level:
 
-## Design Rationale
+![Kali SSH refused](evidence/kali-ssh-refused.png)
 
-These defensive controls were selected to:
+### Fail2Ban Enforcement
 
-- **Enforce network segmentation** - Limit SSH to trusted internal networks only
-- **Automate threat response** - Reduce manual intervention through automated banning
-- **Preserve usability** - Maintain legitimate administrative access from authorized sources
-- **Demonstrate layered security** - Show defense-in-depth with multiple control types
-- **Mirror production practices** - Reflect real-world SSH hardening strategies
+Fail2Ban detected the brute-force pattern and banned Kali's IP:
 
-By combining network-level restrictions (UFW) with application-level monitoring (Fail2Ban), the defense posture is significantly strengthened while maintaining operational flexibility.
+![Fail2Ban banned Kali](evidence/fail2ban-client-banned-kali-ip.png)
+
+### Log Confirmation
+
+Auth log showing firewall denials and Fail2Ban actions:
+
+![Auth log validation](evidence/ubuntu-auth-log-validation.png)
 
 ---
 
-## Outcome
+## Next
 
-At the conclusion of this phase:
-
-- SSH access is restricted to the internal trusted network
-- Automated intrusion prevention is monitoring and blocking brute-force attempts
-- Defensive controls are validated and enforcing as designed
-- The attack surface has been significantly reduced
-
-This hardened baseline enables Phase 04 (Detection & Monitoring) to focus on observing and alerting on attack attempts with additional monitoring capabilities.
-
----
-
-## Documentation Structure
-
-```
-03-defense-hardening/
-├── README.md                                      # This document
-├── fail2ban/
-│   ├── jail.local                                 # Fail2Ban configuration
-│   └── fail2ban-status.png                        # Service status verification
-├── ufw/
-│   ├── rules.txt                                  # UFW rule documentation
-│   └── ufw-rules-and-status.png                   # Firewall configuration verification
-└── evidence/
-    ├── fail2ban-client-banned-kali-ip.png        # Fail2Ban ban validation
-    ├── host-ssh-access-still-allowed.png          # Authorized access validation
-    ├── kali-ssh-refused.png                       # Unauthorized access blocked
-    └── ubuntu-auth-log-validation.png             # Log-level enforcement validation
-```
-
----
-
-## Next Phase
-
-**→ [Phase 04: Detection & Monitoring](../04-detection-monitoring/)**
-
-With defensive controls in place, the next phase develops Python-based detection logic and monitoring capabilities to identify, alert on, and track security events in real-time.
+Defensive controls are in place — UFW blocks unauthorized networks, Fail2Ban catches brute-force from allowed sources. The next phase builds Python-based detection and monitoring to identify, alert on, and track SSH security events in real-time.
