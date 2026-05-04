@@ -1,0 +1,49 @@
+[Unit]
+Description=SSH brute-force detector (real-time, journald follower)
+Documentation=https://github.com/xbadev/ssh-detection-response
+After=network-online.target systemd-journald.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/ssh-detection-response/lab.env
+ExecStart=/usr/bin/python3 /opt/ssh-detection-response/04-detection-monitoring/detector/ssh-bruteforce-detector.py
+
+# Runs as a dedicated low-privilege account. Account must be member
+# of group 'systemd-journal' to read the journal.
+User=ssh-dr
+Group=ssh-dr
+SupplementaryGroups=systemd-journal
+
+# Writable runtime directories. systemd creates these and chowns them.
+StateDirectory=ssh-detection-response
+LogsDirectory=ssh-detection-response
+
+# Hardening — minimum privileges needed to follow the journal.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/ssh-detection-response /var/log/ssh-detection-response
+
+# Restart on crash, but with backoff so a parse bug doesn't spin.
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+# Send stdout/stderr to journald so 'journalctl -u ssh-detector' shows it.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ssh-detector
+
+[Install]
+WantedBy=multi-user.target

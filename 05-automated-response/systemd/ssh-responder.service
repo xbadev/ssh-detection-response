@@ -1,0 +1,44 @@
+[Unit]
+Description=SSH alert responder (real-time webhook)
+Documentation=https://github.com/xbadev/ssh-detection-response
+After=network-online.target ssh-detector.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/ssh-detection-response/lab.env
+ExecStart=/usr/bin/python3 /opt/ssh-detection-response/05-automated-response/responder/ssh-responder.py
+
+# Same dedicated service account as the detector.
+User=ssh-dr
+Group=ssh-dr
+
+StateDirectory=ssh-detection-response
+LogsDirectory=ssh-detection-response
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/ssh-detection-response /var/log/ssh-detection-response
+
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ssh-responder
+
+[Install]
+WantedBy=multi-user.target

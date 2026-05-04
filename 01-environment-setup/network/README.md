@@ -1,45 +1,42 @@
 # Network Configuration
 
-The lab uses a dual-NIC design per VM to separate internal lab traffic from external internet access.
+The lab uses a dual-NIC design per VM, with one NIC on each Proxmox bridge.
 
----
+## Proxmox bridges
 
-## VirtualBox Adapters
+| Bridge | Purpose | Notes |
+|---|---|---|
+| `vmbr0` | Internet egress | DHCP from the home router |
+| `vmbr1` | Internal lab traffic | No uplink — isolated from home network |
 
-| Adapter | Type | Purpose | Visibility |
-|---------|------|---------|------------|
-| Adapter 1 | Host-Only | Internal lab communication, SSH, attack simulation | Host ↔ VMs only |
-| Adapter 2 | NAT | Internet access for updates and packages | VM → Internet only |
+Bridge configuration lives on the Proxmox host (see [proxmox-homelab](https://github.com/xbadev/proxmox-homelab)). VMs receive two virtual NICs each in the VM hardware tab.
 
-Host-Only provides an isolated internal network (no internet exposure). NAT provides outbound-only access (no inbound from external networks).
+## VM NIC layout
 
----
+| VM | NIC 1 (vmbr0) | NIC 2 (vmbr1) |
+|---|---|---|
+| Ubuntu | DHCP, internet only | Static `10.10.10.20/24` |
+| Kali | DHCP, internet only | Static `10.10.10.30/24` |
 
-## IP Addressing Plan
+## IP plan
 
-### Host-Only Network (Internal)
+| Host | Internal IP | Role |
+|---|---|---|
+| Ubuntu Server | `10.10.10.20` | Detection / response target |
+| Kali Linux | `10.10.10.30` | Attacker |
+| (reserved) | `10.10.10.1` | Gateway slot — unused, no router on vmbr1 |
 
-**Subnet:** `192.168.56.0/24` — all IPs statically assigned.
+`10.10.10.0/24` is set aside for this lab. Adding a Windows VM later (for the [rdp-detection-response](https://github.com/xbadev/rdp-detection-response) lab) keeps the same subnet and assigns from `10.10.10.40` onward.
 
-| Device | Interface | IP Address |
-|--------|-----------|------------|
-| Windows Host | VirtualBox Host-Only Adapter | 192.168.56.1 |
-| Kali Linux | eth0 | 192.168.56.30 |
-| Ubuntu Server | enp0s3 | 192.168.56.20 |
+## Why match interfaces by MAC
 
-### NAT Network (External)
-
-IP assigned via DHCP (VirtualBox-managed). Used only for outbound internet access.
-
-| Device | Interface |
-|--------|-----------|
-| Kali Linux | eth1 |
-| Ubuntu Server | enp0s8 |
-
----
+Kernel-assigned interface names (`ens18`, `enp0s3`, `eth0`) change between distributions and even between kernel versions. Pinning configuration to those names breaks on the next reboot or VM clone. The netplan in [`../configs/ubuntu-netplan.yaml`](../configs/ubuntu-netplan.yaml) matches each interface by its MAC address (visible in the Proxmox VM hardware tab) and renames it to a semantic alias.
 
 ## Verification
 
-![Kali interfaces](evidence/kali-ip-a.png)
-
-![Ubuntu interfaces](evidence/ubuntu-ip-a.png)
+```bash
+ip -br link            # MAC addresses of each NIC
+ip -br addr            # final names + IPs
+ip route               # default route via ext0 (vmbr0), no route on int0
+ping -c1 10.10.10.30   # reach Kali across vmbr1
+```

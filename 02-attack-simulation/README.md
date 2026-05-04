@@ -1,56 +1,61 @@
-# SSH Brute-Force Attack Simulation
+# Phase 02 — Attack Simulation
 
-Simulated a controlled SSH brute-force attack from Kali against the Ubuntu server using Hydra to generate observable authentication failures in system logs. This provides real attack data for detection and response in later phases.
+Generates SSH brute-force traffic from Kali against the Ubuntu target so the rest of the pipeline has real data to detect and respond to. The attack is intentionally non-destructive — three passwords, four parallel tasks, none of which are valid — so it produces observable failure events without creating noise on the network.
 
-## Environment
+## What's in this phase
 
-| System | Role | IP Address |
-|--------|------|------------|
-| Kali VM | Attacker | 192.168.56.30 |
-| Ubuntu Server | Target (SSH on port 22) | 192.168.56.20 |
+| File | Purpose |
+|---|---|
+| [`run-attack.sh`](run-attack.sh) | Hydra runner — reads `TARGET_IP` and `LAB_USER` from `lab.env`, sanity-pings the target, then runs the attack |
 
-**Tool:** Hydra v9.6 with a 3-password wordlist (`password`, `123456`, `letmein`) — minimal and non-destructive by design.
-
----
-
-## Steps
-
-### 1. Connectivity Validation
-
-Confirmed Kali can reach the Ubuntu server before launching the attack:
+## Setup on Kali
 
 ```bash
-ping -c 4 192.168.56.20
+# Copy the same lab.env from the target so attacker and target share IPs/user.
+sudo install -d /etc/ssh-detection-response
+sudo install -m 0644 lab.env.example /etc/ssh-detection-response/lab.env
+sudo $EDITOR /etc/ssh-detection-response/lab.env
+
+# Make the runner executable.
+chmod +x 02-attack-simulation/run-attack.sh
 ```
 
-![Kali to Ubuntu connectivity](evidence/kali-to-ubuntu-connectivity.png)
-
-### 2. Hydra Brute-Force Execution
-
-Ran Hydra against SSH targeting the `bader` account:
+## Running the attack
 
 ```bash
-hydra -l bader -P pw.txt ssh://192.168.56.20 -t 4 -V
+./02-attack-simulation/run-attack.sh                 # default values
+./02-attack-simulation/run-attack.sh --user alice    # try a different username
+./02-attack-simulation/run-attack.sh --dry-run       # print the command, do not run
 ```
 
-Result: all 3 attempts failed as expected — no valid passwords found.
+The script:
 
-![Hydra attack](evidence/kali-hydra-attack.png)
+1. Sources `/etc/ssh-detection-response/lab.env`.
+2. Pings the target — fails fast if the internal network is broken.
+3. Generates `pw.txt` (3-password list) on first run.
+4. Runs `hydra -l <user> -P pw.txt -t 4 -V ssh://<target>`.
 
-### 3. Log Observation on Ubuntu
+Three failed attempts → three `Failed password` events in the journal → enough to trip the Phase 04 detector at default settings (threshold 5 within 60s) once the attack runs back-to-back a second time, or after raising `-t` parallelism. To guarantee a single-run trip, edit the wordlist or pass a custom one via Hydra's `-P`.
 
-Monitored `/var/log/auth.log` in real-time during the attack:
+## Manual equivalent
+
+If a reviewer prefers to see the raw command without the wrapper:
 
 ```bash
-sudo tail -f /var/log/auth.log
+hydra -l bader -P /usr/share/wordlists/rockyou.txt -t 4 -V ssh://10.10.10.20
 ```
 
-Authentication failures from `192.168.56.30` logged clearly — failed password attempts for user `bader` with direct correlation to each Hydra attempt:
+Same effect, no env handling, no preflight ping.
 
-![Auth log failures](evidence/ubuntu-authlog-failures.png)
+## Observing on the target
 
----
+```bash
+sudo journalctl -u ssh -f       # live failure stream
+ss -tn state established        # confirm Hydra connections (during attack only)
+```
+
+You will see one journald entry per failed attempt, each with a `Failed password for bader from 10.10.10.30` message — the exact pattern the Phase 04 detector matches.
 
 ## Next
 
-Attack traffic is generated and authentication failures are visible in the logs. The next phase introduces defensive hardening — configuring UFW and Fail2Ban to protect the SSH service before building detection logic.
+Phase 03 introduces defensive controls (UFW, Fail2Ban) so the same attack now meets resistance, while Phase 04 builds the detection layer that watches it happen.
