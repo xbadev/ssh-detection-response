@@ -1,79 +1,71 @@
-# Defense Hardening (UFW + Fail2Ban)
+# Phase 03 — Defense Hardening
 
-Implemented two layers of SSH defense on the Ubuntu server: UFW to restrict SSH access to the internal network only, and Fail2Ban to automatically ban IPs after repeated failed login attempts.
+Two complementary defensive controls on the Ubuntu target. UFW limits *who* can reach SSH at all; Fail2Ban watches the journal and bans IPs that keep failing once they're past UFW.
 
-## Environment
+These are deliberately overlapping. UFW alone does not stop an attacker who is already inside the allowed subnet — the lab attacker is. Fail2Ban catches that case at the host. In production the two layers protect against different threat models; in the lab they demonstrate defense-in-depth.
 
-| System | Role | IP Address |
-|--------|------|------------|
-| Kali VM | Attacker | 192.168.56.30 |
-| Ubuntu Server | Target (SSH on port 22) | 192.168.56.20 |
-| Host machine | Authorized source | 192.168.56.1 |
+## What's in this phase
 
-Starting point: Phase 02 generated SSH brute-force traffic and confirmed authentication failures are logged in `/var/log/auth.log`.
+| File | Purpose |
+|---|---|
+| [`install-ufw.sh`](install-ufw.sh) | Resets and configures UFW, allowing SSH only from `INTERNAL_SUBNET` |
+| [`jail.local`](jail.local) | Fail2Ban SSH jail with `backend=systemd` |
 
----
-
-## Layer 1 — UFW Firewall
-
-Restricted SSH to the internal Host-Only subnet only:
+## UFW — network firewall
 
 ```bash
-sudo ufw allow from 192.168.56.0/24 to any port 22
+sudo ./install-ufw.sh
 ```
 
-SSH is no longer globally reachable — only the trusted internal network can attempt authentication.
+The script reads `INTERNAL_SUBNET` from `/etc/ssh-detection-response/lab.env`, resets UFW, sets `default deny incoming`, then opens TCP/22 only from that subnet. After it runs, port 22 is unreachable from any other source, including the host's external NIC.
 
-![UFW rules and status](evidence/ufw-rules-and-status.png)
+Manual equivalent:
 
----
+```bash
+sudo ufw --force reset
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow from 10.10.10.0/24 to any port 22 proto tcp
+sudo ufw --force enable
+```
 
-## Layer 2 — Fail2Ban
+## Fail2Ban — log-driven IP bans
 
-Deployed Fail2Ban to monitor `/var/log/auth.log` and automatically ban IPs exhibiting brute-force behavior.
+Install:
 
-**Config:** [`jail.local`](jail.local)
+```bash
+sudo apt-get install -y fail2ban
+sudo install -m 0644 jail.local /etc/fail2ban/jail.local
+sudo systemctl enable --now fail2ban
+sudo systemctl restart fail2ban
+```
 
-| Setting | Value |
-|---------|-------|
-| Max retries | 3 failed attempts |
-| Find time | 60 seconds |
-| Ban time | 300 seconds (5 minutes) |
+Configuration:
 
-Fail2Ban active and monitoring the SSH jail:
+| Setting | Value | Reason |
+|---|---|---|
+| `backend` | `systemd` | Reads journald directly, matching the Phase 04 detector |
+| `maxretry` | 3 | Sensitive enough to catch a real attack |
+| `findtime` | 60s | Three failures within a minute is the trigger window |
+| `bantime` | 600s | 10-minute IP ban — long enough to be obviously effective in a demo, short enough for repeat runs |
 
-![Fail2Ban status](evidence/fail2ban-status.png)
-
----
+The `backend = systemd` line is the important one on modern Ubuntu — newer images often ship without `/var/log/auth.log` because the default logger is journald. Older Fail2Ban tutorials still reference the auth.log file path and silently fail on those systems.
 
 ## Validation
 
-### Authorized Access (Host → Ubuntu)
+```bash
+sudo ufw status verbose             # rule on 22 from internal subnet only
+sudo fail2ban-client status sshd    # active jail, current banned IPs
+```
 
-SSH from the host machine still works — legitimate internal access preserved:
+After Hydra runs from Kali a few times, expect to see `Currently banned: 1` and `10.10.10.30` in the banned list.
 
-![Host SSH allowed](evidence/host-ssh-access-still-allowed.png)
+To unban during testing:
 
-### Unauthorized Access (Kali → Ubuntu)
-
-SSH from Kali refused at the firewall level:
-
-![Kali SSH refused](evidence/kali-ssh-refused.png)
-
-### Fail2Ban Enforcement
-
-Fail2Ban detected the brute-force pattern and banned Kali's IP:
-
-![Fail2Ban banned Kali](evidence/fail2ban-client-banned-kali-ip.png)
-
-### Log Confirmation
-
-Auth log capturing failed SSH authentication attempts from Kali (192.168.56.30):
-
-![Auth log validation](evidence/ubuntu-auth-log-validation.png)
-
----
+```bash
+sudo fail2ban-client set sshd unbanip 10.10.10.30
+```
 
 ## Next
 
-Defensive controls are in place — UFW blocks unauthorized networks, Fail2Ban catches brute-force from allowed sources. The next phase builds Python-based detection and monitoring to identify, alert on, and track SSH security events in real-time.
+Phase 04 adds a detection layer that observes the *same* journal Fail2Ban is reading, and emits structured alerts. The two run side-by-side: Fail2Ban enforces, the detector reports.

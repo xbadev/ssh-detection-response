@@ -1,10 +1,33 @@
-# SSH Daemon Configuration (Relevant Excerpts)
+# SSH Daemon — Lab Hardening Excerpts
+#
+# Path on target: drop into /etc/ssh/sshd_config.d/10-lab.conf
+# Reload with:    sudo systemctl reload ssh
+#
+# Note: Password authentication is intentionally LEFT ENABLED.
+# The lab simulates SSH brute-force against passwords. Disabling
+# password auth would make the attack scenario impossible by design.
+# In production, you would set PasswordAuthentication no and rely
+# only on PubkeyAuthentication.
 
 Port 22
 Protocol 2
 
+# Disable direct root login. Attackers must compromise an unprivileged
+# account first, then escalate — adds a layer and is auditable.
 PermitRootLogin no
+
+# Auth methods — both enabled for the lab. See note above.
 PasswordAuthentication yes
 PubkeyAuthentication yes
 
+# Restrict which accounts may authenticate at all. Replace with the
+# value of LAB_USER from lab.env on your target.
 AllowUsers bader
+
+# Reduce attacker time-per-attempt and total auth tries per connection.
+LoginGraceTime 20
+MaxAuthTries 3
+MaxSessions 2
+
+# Banner is intentionally NOT set — a banner that names the system
+# would help an attacker fingerprint it.

@@ -1,279 +1,233 @@
 #!/usr/bin/env python3
-
 """
-Script: ssh-bruteforce-detector.py
+Phase 04 — SSH Brute-Force Detector (journald, real-time).
 
-Purpose:
-Detect SSH brute-force attempts by analyzing authentication logs and identifying
-repeated failed login attempts within a configurable time window.
+Follows the systemd journal for sshd, parses authentication failures
+in real time, and emits structured alerts to a JSONL file when a
+source IP exceeds the configured failure threshold within a sliding
+time window.
 
-High-level behavior:
-- Parses an auth.log style file for "Failed password" SSH events
-- Extracts timestamp, source IP address, and username
-- Groups failed attempts by source IP
-- Uses a sliding time window to detect brute-force patterns
-- Generates alerts when a configurable threshold is exceeded
-- Maintains state to prevent duplicate alerts for the same activity
+Architecture choice: this daemon is intentionally narrow. It detects
+and emits — it does NOT block IPs or send notifications. Response is
+handled by Phase 05, which tails the JSONL output. Separating detection
+from response mirrors how real SOAR platforms are built and lets either
+side be developed, tested, or scaled independently.
 
-Key features:
-- Time-based detection using a sliding window algorithm
-- Configurable threshold, time window, and lookback period
-- Deduplication using a persistent JSON state file
-- Append-only alert logging for auditability
-- Designed for scheduled execution via systemd timer or cron
+Configuration is read from lab.env (sourced by the systemd unit) via
+environment variables. See lab.env.example at the repo root.
 
-Inputs:
-- SSH authentication log (default: /var/log/auth.log)
+Inputs (env):
+    DETECT_THRESHOLD            int, default 5
+    DETECT_WINDOW_SECONDS       int, default 60
+    DETECT_RETENTION_SECONDS    int, default 600
+    LAB_LOG_DIR                 str, default /var/log/ssh-detection-response
+    LAB_STATE_DIR               str, default /var/lib/ssh-detection-response
 
 Outputs:
-- Alert log file documenting detected brute-force sources
-- JSON state file tracking last alert per IP for deduplication
-
-Intended use:
-This script is designed for detection and monitoring only.
-It does not block traffic or modify firewall rules.
-Automated response actions are handled in a different script.
+    {LAB_LOG_DIR}/alerts.jsonl   one JSON object per detected event
+    stdout/stderr                progress + warnings (captured by journald)
 """
 
+from __future__ import annotations
 
-import argparse, re, json
-from datetime import datetime, timedelta, timezone
+import json
+import os
+import re
+import signal
+import socket
+import subprocess
+import sys
+from collections import defaultdict, deque
+from datetime import datetime, timezone
 from pathlib import Path
 
-FAILED_RE = re.compile(r'^(?P<ts>\S+)\s+\S+\s+sshd\[\d+\]: Failed password for\s+(?P<user>\S+)\s+from\s+(?P<ip>\d+\.\d+\.\d+\.\d+)')
+# --- Config from environment -----------------------------------
+
+THRESHOLD = int(os.environ.get("DETECT_THRESHOLD", "5"))
+WINDOW_SECONDS = int(os.environ.get("DETECT_WINDOW_SECONDS", "60"))
+RETENTION_SECONDS = int(os.environ.get("DETECT_RETENTION_SECONDS", "600"))
+LOG_DIR = Path(os.environ.get("LAB_LOG_DIR", "/var/log/ssh-detection-response"))
+STATE_DIR = Path(os.environ.get("LAB_STATE_DIR", "/var/lib/ssh-detection-response"))
+
+ALERTS_FILE = LOG_DIR / "alerts.jsonl"
+COOLDOWN_FILE = STATE_DIR / "detector-cooldowns.json"
+
+# Suppress repeat alerts for the same IP for this many seconds after firing.
+# Prevents one sustained attack from generating one alert per second.
+ALERT_COOLDOWN_SECONDS = WINDOW_SECONDS
+
+# --- Patterns --------------------------------------------------
+# journalctl -o json gives us the MESSAGE field. We match the standard
+# OpenSSH failure formats. Both 'invalid user' and 'Failed password'
+# count as a failed authentication for our purposes.
+FAILED_PATTERNS = [
+    re.compile(r"Failed password for (?:invalid user )?(?P<user>\S+) from (?P<ip>\d+\.\d+\.\d+\.\d+)"),
+    re.compile(r"Invalid user (?P<user>\S+) from (?P<ip>\d+\.\d+\.\d+\.\d+)"),
+]
 
 
-DEFAULT_THRESHOLD = 5 # 5 retries
-DEFAULT_WINDOW_SECONDS = 60 # 1 minute
-DEFAULT_LOOKBACK_SECONDS = 600  # 10 minutes
-DEFAULT_OUTPUT_PATH = Path("output/alerts.log")
-DEFAULT_STATE_PATH = Path("output/state.json")
+def parse_failure(message: str):
+    for pat in FAILED_PATTERNS:
+        m = pat.search(message)
+        if m:
+            return m.group("ip"), m.group("user")
+    return None
 
-def parse_timestamp(ts: str) -> datetime:
-    """ Convert ISO timestamp string into datetime """
-    return datetime.fromisoformat(ts)
 
-def parse_failed_attempts(lines):
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+# --- State management ------------------------------------------
+# Per-IP deque of (timestamp, user) tuples within the retention window.
+# Old entries are evicted lazily as new ones arrive.
+class SlidingDetector:
+    def __init__(self, threshold: int, window_s: int, retention_s: int):
+        self.threshold = threshold
+        self.window_s = window_s
+        self.retention_s = retention_s
+        self.events: dict[str, deque] = defaultdict(deque)
+        self.cooldowns: dict[str, datetime] = self._load_cooldowns()
+
+    def _load_cooldowns(self) -> dict[str, datetime]:
+        if not COOLDOWN_FILE.exists():
+            return {}
+        try:
+            data = json.loads(COOLDOWN_FILE.read_text())
+            return {ip: datetime.fromisoformat(ts) for ip, ts in data.items()}
+        except Exception as e:
+            print(f"[WARN] Could not load cooldowns: {e}", file=sys.stderr)
+            return {}
+
+    def _save_cooldowns(self) -> None:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = COOLDOWN_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({ip: ts.isoformat() for ip, ts in self.cooldowns.items()}))
+        tmp.replace(COOLDOWN_FILE)
+
+    def record_failure(self, ip: str, user: str, ts: datetime):
+        # Evict events outside retention window.
+        bucket = self.events[ip]
+        cutoff_retention = ts.timestamp() - self.retention_s
+        while bucket and bucket[0][0].timestamp() < cutoff_retention:
+            bucket.popleft()
+        bucket.append((ts, user))
+
+        # Check cooldown — suppress if we already alerted recently.
+        cooldown_until = self.cooldowns.get(ip)
+        if cooldown_until and ts < cooldown_until:
+            return None
+
+        # Count events within the detection window.
+        cutoff_window = ts.timestamp() - self.window_s
+        in_window = [(t, u) for (t, u) in bucket if t.timestamp() >= cutoff_window]
+        if len(in_window) >= self.threshold:
+            users = sorted({u for (_, u) in in_window})
+            alert = {
+                "timestamp": ts.isoformat(),
+                "source_ip": ip,
+                "failure_count": len(in_window),
+                "window_seconds": self.window_s,
+                "first_seen": in_window[0][0].isoformat(),
+                "last_seen": in_window[-1][0].isoformat(),
+                "users_targeted": users,
+                "host": socket.gethostname(),
+            }
+            self.cooldowns[ip] = datetime.fromtimestamp(ts.timestamp() + ALERT_COOLDOWN_SECONDS, tz=timezone.utc)
+            self._save_cooldowns()
+            return alert
+        return None
+
+
+# --- Alert sink ------------------------------------------------
+def emit_alert(alert: dict) -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(alert, separators=(",", ":")) + "\n"
+    # Open/close per write. Slower than a held handle, but safer
+    # against log rotation and crash recovery.
+    with ALERTS_FILE.open("a") as f:
+        f.write(line)
+        f.flush()
+        os.fsync(f.fileno())
+    print(f"[ALERT] {alert['source_ip']} count={alert['failure_count']} users={alert['users_targeted']}")
+
+
+# --- journald follower -----------------------------------------
+def follow_journal():
     """
-    parse a auth.log and returns a list of failed attempts.
-    each attempt is a dict with timestamp, user, and ip.
+    Yield parsed events from `journalctl -u ssh -f -o json`.
+    Each yielded item is (datetime, message_string).
     """
-    attempts = []
+    cmd = [
+        "journalctl",
+        "-u", "ssh.service",
+        "-u", "sshd.service",     # both unit names exist depending on distro
+        "-o", "json",
+        "-f",                      # follow
+        "--no-pager",
+        "-n", "0",                 # start from now, ignore history on restart
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
 
-    for line in lines:
-        match = FAILED_RE.match(line.strip())
+    # Forward signals to child so systemd stop is clean.
+    def _handle_sig(signum, frame):
+        proc.terminate()
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, _handle_sig)
+    signal.signal(signal.SIGINT, _handle_sig)
 
-        if not match:
+    if proc.stdout is None:
+        raise RuntimeError("journalctl produced no stdout")
+
+    for raw in proc.stdout:
+        raw = raw.strip()
+        if not raw:
             continue
-
-        attempts.append({
-            "timestamp": parse_timestamp(match.group("ts")),
-            "ip": match.group("ip"),
-            "user": match.group("user")
-        })
-
-    return attempts
-
-
-def detect_bruteforce(attempts, threshold: int, window_seconds: int):
-    """
-    Detect brute-force attempts.
-
-    Returns a list of alert dictionaries like:
-    {
-      "ip": "192.168.56.30",
-      "count": 6,
-      "first_seen": datetime(...),
-      "last_seen": datetime(...)
-    }
-    """
-
-    attempts = sorted(attempts, key=lambda a: a["timestamp"])
-
-    # Group by ip
-    attempts_by_ip = {}
-    for a in attempts:
-        attempts_by_ip.setdefault(a["ip"], []).append(a)
-
-    alerts = []
-
-    # Sliding window per ip
-    for ip, ip_attempts in attempts_by_ip.items():
-        left = 0
-        for right in range(len(ip_attempts)):
-            while (ip_attempts[right]["timestamp"] - ip_attempts[left]["timestamp"]).total_seconds() > window_seconds:
-                left += 1
-
-            count_in_window = right - left + 1
-            if count_in_window >= threshold:
-                alerts.append({
-                    "ip": ip,
-                    "count": count_in_window,
-                    "first_seen": ip_attempts[left]["timestamp"],
-                    "last_seen": ip_attempts[right]["timestamp"],
-                })
-                break
-
-    return alerts
-
-def write_alerts(alerts, output_path: Path):
-    """
-    Append detected alerts to an output log file.
-    """
-    if not alerts:
-        return
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with output_path.open("a") as f:
-        for alert in alerts:
-            f.write(
-                f"[ALERT] {alert['ip']} | "
-                f"count={alert['count']} | "
-                f"from={alert['first_seen']} | "
-                f"to={alert['last_seen']}\n"
-            )
-
-
-def load_state(state_path: Path) -> dict:
-    """
-    Loads JSON state that tracks last alert per IP.
-    Format:
-      {"ips": {"1.2.3.4": {"last_alert_end": "ISO_TIMESTAMP"}}}
-    """
-    if not state_path.exists():
-        return {"ips": {}}
-
-    try:
-        data = json.loads(state_path.read_text())
-        if "ips" not in data or not isinstance(data["ips"], dict):
-            return {"ips": {}}
-        return data
-    except Exception:
-        # If state file is corrupted or invalid, start fresh
-        return {"ips": {}}
-
-
-def save_state(state_path: Path, state: dict) -> None:
-    """
-    Writes state safely (temp file then replace).
-    """
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = state_path.with_suffix(state_path.suffix + ".tmp")
-    tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
-    tmp.replace(state_path)
-
-
-def filter_new_alerts(alerts, state: dict):
-    """
-    Dedup logic:
-    For each IP, if we've already alerted up to last_alert_end,
-    skip alerts whose last_seen is <= that stored time.
-    """
-    new_alerts = []
-    ips_state = state.setdefault("ips", {})
-
-    for alert in alerts:
-        ip = alert["ip"]
-        last_seen = alert["last_seen"]
-
-        prev_iso = ips_state.get(ip, {}).get("last_alert_end")
-        if prev_iso:
+        try:
+            entry = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        message = entry.get("MESSAGE", "")
+        if not message:
+            continue
+        # journald gives us __REALTIME_TIMESTAMP in microseconds since epoch.
+        ts_raw = entry.get("__REALTIME_TIMESTAMP")
+        if ts_raw:
             try:
-                prev_dt = datetime.fromisoformat(prev_iso)
-                if last_seen <= prev_dt:
-                    continue
-            except ValueError:
-                # if previous timestamp is weird, ignore it
-                pass
-
-        new_alerts.append(alert)
-
-    return new_alerts
+                ts = datetime.fromtimestamp(int(ts_raw) / 1_000_000, tz=timezone.utc)
+            except (ValueError, TypeError):
+                ts = now_utc()
+        else:
+            ts = now_utc()
+        yield ts, message
 
 
-def update_state_with_alerts(state: dict, alerts) -> None:
-    """
-    After writing alerts, update state so we don't alert again on the same event.
-    """
-    ips_state = state.setdefault("ips", {})
-    for alert in alerts:
-        ip = alert["ip"]
-        ips_state.setdefault(ip, {})
-        ips_state[ip]["last_alert_end"] = alert["last_seen"].isoformat()
+# --- Main loop -------------------------------------------------
+def main() -> int:
+    print(f"[INFO] Detector starting: threshold={THRESHOLD} window={WINDOW_SECONDS}s retention={RETENTION_SECONDS}s")
+    print(f"[INFO] Alerts file: {ALERTS_FILE}")
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
 
+    detector = SlidingDetector(THRESHOLD, WINDOW_SECONDS, RETENTION_SECONDS)
 
-
-def main():
-    parser = argparse.ArgumentParser(description="SSH brute-force detector")
-    parser.add_argument("-i", "--input", default="/var/log/auth.log", help="Path to auth.log file. DEFAULT = /var/log/auth.log")
-    parser.add_argument("-t", "--threshold", type=int, default=DEFAULT_THRESHOLD, help="Number of failed attempts to trigger alert. DEFAULT = 5")
-    parser.add_argument("-w", "--window", type=int, default=DEFAULT_WINDOW_SECONDS, help="Time window in seconds to check for brute-force attempts. DEFAULT = 60")
-    parser.add_argument("--lookback", type=int, default=DEFAULT_LOOKBACK_SECONDS, help="Only analyze events from the last N seconds. DEFAULT = 600")
-    parser.add_argument("--output", default=str(DEFAULT_OUTPUT_PATH), help="Where to append alerts. DEFAULT = output/alerts.log")
-    parser.add_argument("--state", default=str(DEFAULT_STATE_PATH), help="State file (json) used to dedupe alerts. DEFAULT = output/state.json")
-
-
-    args = parser.parse_args()
-    log_path = Path(args.input)
-
-    if not log_path.exists():
-        parser.error(f"Input file {log_path} does not exist")
-
-    if args.threshold <= 0:
-        parser.error("Threshold must be a positive integer")
-
-    if args.window <= 0:
-        parser.error("Window must be a positive integer")
-
-    if args.lookback <= 0:
-        parser.error("Lookback must be a positive integer")
-
-    if args.lookback < args.window:
-        parser.error("Lookback must be >= window so the detector can see a full window")
-
-
-    lines = log_path.read_text(errors="replace").splitlines()
-    attempts = parse_failed_attempts(lines)
-
-    # Lookback filter (prevents old history from triggering forever)
-    now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(seconds=args.lookback)
-    recent_attempts = [a for a in attempts if a["timestamp"] >= cutoff]
-
-    print(f"[INFO] Parsed {len(attempts)} failed login attempts from {log_path}")
-    print(f"[INFO] Lookback={args.lookback}s, analyzing {len(recent_attempts)} attempts since {cutoff.isoformat()}")
-
-    alerts = detect_bruteforce(recent_attempts, args.threshold, args.window)
-
-    output_file = Path(args.output)
-    state_file = Path(args.state)
-
-    if not alerts:
-        print("[INFO] No brute-force patterns detected.")
-    else:
-        # Deduplicate using state
-        state = load_state(state_file)
-        new_alerts = filter_new_alerts(alerts, state)
-
-        if not new_alerts:
-            print("[INFO] Brute-force detected but already alerted (deduped by state).")
-            return 0
-
-        print(f"[ALERT] Detected {len(new_alerts)} new brute-force source(s):")
-
-        for alert in new_alerts:
-            print(
-                f"  - IP {alert['ip']} had {alert['count']} failures "
-                f"between {alert['first_seen']} and {alert['last_seen']}"
-            )
-
-        write_alerts(new_alerts, output_file)
-        update_state_with_alerts(state, new_alerts)
-        save_state(state_file, state)
-
+    for ts, message in follow_journal():
+        parsed = parse_failure(message)
+        if not parsed:
+            continue
+        ip, user = parsed
+        alert = detector.record_failure(ip, user, ts)
+        if alert:
+            emit_alert(alert)
 
     return 0
 
+
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())

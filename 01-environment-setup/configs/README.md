@@ -1,31 +1,31 @@
-# System Configuration
+# Host Configuration
 
-Network and SSH daemon configuration applied to the Ubuntu server to establish a secure, predictable baseline before any attack simulation.
+System configuration applied to the Ubuntu target to establish a hardened baseline before any attack simulation.
 
----
+## Network — `ubuntu-netplan.yaml`
 
-## Network Interface Configuration (Netplan)
+Path on target: `/etc/netplan/01-lab.yaml` (mode `0600` per netplan requirements).
 
-Dual-NIC separation enforced via Netplan: static IP on the Host-Only interface for internal lab traffic, DHCP on the NAT interface for outbound internet access.
+Apply with:
 
-**Config file:** [`ubuntu-netplan.yaml`](./ubuntu-netplan.yaml)
+```bash
+sudo install -m 0600 ubuntu-netplan.yaml /etc/netplan/01-lab.yaml
+sudo netplan generate
+sudo netplan apply
+```
 
-Netplan YAML as applied under `/etc/netplan/`:
+Two NICs, each matched by MAC, renamed to `ext0` (vmbr0, DHCP) and `int0` (vmbr1, static `10.10.10.20/24`). Replace the placeholder MAC addresses with the actual values from `ip -br link` before applying.
 
-![Netplan config](evidence/netplan-static-yaml.png)
+## SSH daemon — `sshd_config.snippet`
 
-Active interface state confirming static internal IP, DHCP external IP, and default route via NAT adapter:
+Path on target: `/etc/ssh/sshd_config.d/10-lab.conf`.
 
-![Active interfaces and routing](evidence/netplan-active-interfaces-and-routing.png)
+Apply with:
 
----
+```bash
+sudo install -m 0644 sshd_config.snippet /etc/ssh/sshd_config.d/10-lab.conf
+sudo sshd -t                        # validate before reloading
+sudo systemctl reload ssh
+```
 
-## SSH Daemon Configuration
-
-SSH hardened with root login disabled, explicit protocol enforcement, and restricted authentication methods.
-
-**Config snippet:** [`sshd_config.snippet`](./sshd_config.snippet)
-
-SSH daemon running and enforcing the configuration:
-
-![SSHD service status](evidence/sshd-service-status.png)
+Drop-in files in `/etc/ssh/sshd_config.d/` are loaded after `sshd_config` and override matching directives. This pattern survives distribution upgrades because the package-managed `sshd_config` is left untouched.

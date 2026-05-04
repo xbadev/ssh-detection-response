@@ -1,0 +1,20 @@
+# Real config (contains webhook URL). Only the .example is committed.
+lab.env
+**/lab.env
+
+# Legacy runtime artifacts (in case anything still writes locally during dev)
+**/output/
+**/state.json
+**/alerts.log
+**/alerts.jsonl
+**/notify_state.json
+**/notifications.log
+**/*.tmp
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+__pycache__/
+*.pyc

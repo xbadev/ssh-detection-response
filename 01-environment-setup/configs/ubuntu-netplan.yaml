@@ -1,11 +1,35 @@
+# Netplan configuration — Ubuntu target, Proxmox VirtIO NICs.
+#
+# Path on target: /etc/netplan/01-lab.yaml
+# Apply with:     sudo netplan generate && sudo netplan apply
+#
+# Interfaces are matched by MAC address (set in Proxmox VM hardware tab)
+# so this config survives interface name drift across Ubuntu releases.
+#
+# Replace the two MAC addresses below with the actual values from your VM.
+# Find them with: ip -br link
 network:
   version: 2
+  renderer: networkd
+
   ethernets:
-    enp0s3:
-      dhcp4: false
-      addresses:
-        - 192.168.56.20/24
+    # External NIC — bridged to vmbr0, gets DHCP for internet access.
+    ext0:
+      match:
+        macaddress: "BC:24:11:AA:AA:AA"   # <-- replace with vmbr0 NIC MAC
+      set-name: ext0
+      dhcp4: true
+      dhcp6: false
       optional: true
 
-    enp0s8:
-      dhcp4: true
+    # Internal lab NIC — bridged to vmbr1, static on 10.10.10.0/24.
+    # No gateway here: internet egress goes through ext0.
+    int0:
+      match:
+        macaddress: "BC:24:11:BB:BB:BB"   # <-- replace with vmbr1 NIC MAC
+      set-name: int0
+      dhcp4: false
+      dhcp6: false
+      addresses:
+        - 10.10.10.20/24
+      optional: false
