@@ -1,0 +1,17 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unit + end-to-end tests (stdlib unittest)
+        run: make test
+
+      - name: shellcheck
+        run: shellcheck 02-attack-simulation/run-attack.sh 03-defense-hardening/install-ufw.sh

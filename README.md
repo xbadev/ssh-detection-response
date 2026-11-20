@@ -110,7 +110,7 @@ sudo make config       # edit lab.env, then restart the services as prompted
 
 ## Tests
 
-`make test` runs [`tests/`](./tests/): 20 tests covering log parsing, the sliding window, cooldowns and their persistence, webhook retry behavior, and an end-to-end run of the real responder against a local fake webhook server. Details are in the Phase 04 and Phase 05 READMEs.
+`make test` runs [`tests/`](./tests/): 20 tests covering log parsing, the sliding window, cooldowns and their persistence, webhook retry behavior, and an end-to-end run of the real responder against a local fake webhook server. Details are in the Phase 04 and Phase 05 READMEs. [`ci.yml`](./.github/workflows/ci.yml) runs the same tests plus shellcheck on every push.
 
 ## Notes for reviewers
 
