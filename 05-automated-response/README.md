@@ -21,14 +21,14 @@ alerts.jsonl  (written by ssh-detector)
   cooldown check (per source IP, RESPONSE_COOLDOWN_SECONDS)
         │
         ├─ in cooldown → skip, advance offset
-        └─ not in cooldown → format + POST → record cooldown → advance offset
+        └─ not in cooldown → format + POST (with retries) → record cooldown → advance offset
 ```
 
 The follower handles three corner cases that bite naive `tail -f`-style code:
 
-1. **File rotation** — detected via inode change. Reopens.
-2. **Truncation** — detected via size shrinking below current offset. Rewinds to 0.
-3. **Network failure** — webhook POST raises `URLError`. The responder logs the error and **does not advance the offset**, so the next attempt retries the same alert.
+1. **File rotation**: detected via inode change. Reopens.
+2. **Truncation**: detected via the file shrinking below the current offset. Rewinds to 0.
+3. **Webhook failure**: any network error (refused, timeout, HTTP error) is retried in place with exponential backoff (1s, 2s, ...) up to `RESPONSE_WEBHOOK_RETRIES` attempts. If every attempt fails, the responder logs `giving up on notification`, advances the offset, and moves on, so one dead webhook can't stall every alert queued behind it. The alert itself is never lost: it stays in `alerts.jsonl` and in the detector's journal output.
 
 ## Configuration
 
@@ -36,8 +36,9 @@ Sourced from `/etc/ssh-detection-response/lab.env`:
 
 | Variable | Default | Effect |
 |---|---|---|
-| `ALERT_WEBHOOK_URL` | _(required)_ | Discord-compatible webhook URL — accepts `{"content": "..."}` |
+| `ALERT_WEBHOOK_URL` | _(required)_ | Discord-compatible webhook URL that accepts `{"content": "..."}`. The shipped `REPLACE_ME` placeholder is treated as unset |
 | `RESPONSE_COOLDOWN_SECONDS` | 300 | Per-IP suppression after one notification |
+| `RESPONSE_WEBHOOK_RETRIES` | 3 | Delivery attempts per alert before giving up |
 | `LAB_LOG_DIR` | `/var/log/ssh-detection-response` | Reads `alerts.jsonl` from here |
 | `LAB_STATE_DIR` | `/var/lib/ssh-detection-response` | Persists offset and cooldown state here |
 | `RESPONDER_DRY_RUN` | _(unset)_ | Set to `1` to log instead of posting |
@@ -50,7 +51,7 @@ Default Discord-friendly Markdown:
 🚨 **SSH brute-force detected**
 Host: `ubuntu-target`
 Source IP: `10.10.10.30`
-Failures: `5` in `60s`
+Failures: `3` in `60s`
 Users targeted: `bader`
 Last seen: `2026-05-02T22:00:00+00:00`
 ```
@@ -78,30 +79,24 @@ sudo systemctl status ssh-responder
 sudo journalctl -u ssh-responder -f
 ```
 
-Dry-run for testing without spamming a real webhook:
-
-```bash
-sudo systemctl set-environment RESPONDER_DRY_RUN=1
-sudo systemctl restart ssh-responder
-```
+Dry-run (log the message instead of posting it): add `RESPONDER_DRY_RUN=1` to `/etc/ssh-detection-response/lab.env`, then `sudo systemctl restart ssh-responder`. Remove the line to go live again.
 
 ## Testing
 
-The responder is verified by an end-to-end harness that spins up a local HTTP server, writes alerts into `alerts.jsonl`, and asserts the responder posts the right payloads (and respects cooldown). The harness lives in the repo's CI scripts; the manual equivalent is:
+Tests live in [`tests/test_responder.py`](../tests/test_responder.py) and run with `make test` (no root, standard library only):
+
+- **Unit**: message formatting, the `REPLACE_ME` placeholder being treated as unset, retry-then-succeed, and give-up-after-N-attempts.
+- **End to end**: the real responder runs as a subprocess against a local fake webhook server; the test writes alerts into `alerts.jsonl` and asserts the right POSTs arrive, that a repeat IP is suppressed by cooldown, and that a restart doesn't re-send alerts already delivered (offset persistence).
+
+To check the live service on the target without waiting for an attack, append a fake alert and watch the responder pick it up:
 
 ```bash
-# Terminal 1 — fake webhook
-python3 -m http.server 8080
-
-# Terminal 2 — point responder at it
-sudo systemctl set-environment ALERT_WEBHOOK_URL=http://127.0.0.1:8080
-sudo systemctl restart ssh-responder
-
-# Terminal 3 — drop a test alert
-echo '{"timestamp":"2026-05-02T22:00:00+00:00","source_ip":"1.2.3.4","failure_count":5,"window_seconds":60,"first_seen":"2026-05-02T21:59:00+00:00","last_seen":"2026-05-02T22:00:00+00:00","users_targeted":["bader"],"host":"test"}' | sudo tee -a /var/log/ssh-detection-response/alerts.jsonl
-
-# Terminal 1 should see a POST.
+echo '{"timestamp":"2026-01-01T12:00:00+00:00","source_ip":"203.0.113.7","failure_count":3,"window_seconds":60,"first_seen":"2026-01-01T11:59:58+00:00","last_seen":"2026-01-01T12:00:00+00:00","users_targeted":["test"],"host":"manual-test"}' \
+  | sudo tee -a /var/log/ssh-detection-response/alerts.jsonl
+sudo journalctl -u ssh-responder -n 5
 ```
+
+`203.0.113.7` is a reserved documentation address, so the test alert can't be mistaken for real traffic.
 
 ## Pipeline closure
 

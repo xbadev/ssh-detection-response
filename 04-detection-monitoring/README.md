@@ -1,6 +1,6 @@
 # Phase 04 — Detection & Monitoring
 
-A long-running Python daemon that follows the systemd journal in real time, applies a per-IP sliding-window threshold, and emits structured JSONL alerts when SSH brute-force activity is detected. End-to-end latency from a failed login to an alert on disk is under two seconds.
+A long-running Python daemon that follows the systemd journal in real time, applies a per-IP sliding-window threshold, and emits structured JSONL alerts when SSH brute-force activity is detected. There's no polling interval: an alert is written as soon as the failure that crosses the threshold reaches the journal.
 
 ## What's in this phase
 
@@ -17,7 +17,7 @@ journalctl -u ssh -f -o json
         ▼  one JSON message per journald event
   parse_failure(MESSAGE)
         │
-        ▼  matches "Failed password ... from <ip>" or "Invalid user ..."
+        ▼  matches "Failed password for [invalid user ]X from <ip> port <n>"
   SlidingDetector.record_failure(ip, user, ts)
         │
         ▼  per-IP deque, evict outside retention, count within window
@@ -31,13 +31,17 @@ The detector subprocesses `journalctl -u ssh.service -u sshd.service -o json -f 
 
 Per-IP state lives in memory as a `deque` of `(timestamp, user)` tuples, retained for `DETECT_RETENTION_SECONDS`. Each new event triggers eviction of expired entries and a count of events in the inner detection window.
 
+### One attempt, one count
+
+For a nonexistent account, sshd logs two lines per attempt: `Invalid user admin from <ip> port <n>` and then `Failed password for invalid user admin from <ip> port <n> ssh2`. An earlier version matched both, so every attempt against a fake username counted twice and the detector fired at half the intended threshold. It now counts only the `Failed password` line, which sshd writes exactly once per attempt for real and fake users alike. The regression is pinned by `test_two_invalid_user_attempts_count_as_two_not_four` in [`tests/test_detector.py`](../tests/test_detector.py).
+
 ## Configuration
 
 All tunables come from `/etc/ssh-detection-response/lab.env` (sourced by the systemd unit):
 
 | Variable | Default | Effect |
 |---|---|---|
-| `DETECT_THRESHOLD` | 5 | Failures required to trigger an alert |
+| `DETECT_THRESHOLD` | 3 | Failures required to trigger an alert. Kept below Fail2Ban's `maxretry` (5) so the alert fires before the ban cuts the attacker off |
 | `DETECT_WINDOW_SECONDS` | 60 | Sliding window for the threshold check |
 | `DETECT_RETENTION_SECONDS` | 600 | How long to keep per-IP state in memory |
 | `LAB_LOG_DIR` | `/var/log/ssh-detection-response` | Where `alerts.jsonl` is written |
@@ -51,7 +55,7 @@ One JSON object per line in `alerts.jsonl`:
 {
   "timestamp": "2026-05-02T22:00:00+00:00",
   "source_ip": "10.10.10.30",
-  "failure_count": 5,
+  "failure_count": 3,
   "window_seconds": 60,
   "first_seen": "2026-05-02T21:59:00+00:00",
   "last_seen": "2026-05-02T22:00:00+00:00",
@@ -91,13 +95,15 @@ tail -f /var/log/ssh-detection-response/alerts.jsonl
 
 ## Testing
 
-The detector logic is verified by a small in-tree test that exercises the sliding window, cooldown, and message parsing. Before deploying any change, run:
+Unit tests live in [`tests/test_detector.py`](../tests/test_detector.py) and need no root, no services, and no packages beyond Python's standard library:
 
 ```bash
-python3 -m py_compile 04-detection-monitoring/detector/ssh-bruteforce-detector.py
+make test
 ```
 
-For end-to-end testing, run `make demo` to reset state, then run Hydra from Kali. Expect an alert in `alerts.jsonl` within ~2 seconds of the threshold being crossed.
+They cover message parsing (valid user, invalid user, IPv6, lines that must be ignored), the sliding window (below / at threshold, slow attacks outside the window, independent IPs), cooldown (suppression, expiry, persistence across a restart), and two end-to-end sequences of real sshd messages: the invalid-user double-count regression, and the 6-password demo attack producing exactly one alert.
+
+For a live test, run `sudo make demo` on the target, then `run-attack.sh` on Kali, and watch `sudo journalctl -u ssh-detector -f`.
 
 ## Next
 
