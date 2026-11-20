@@ -31,13 +31,17 @@ import signal
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 # --- Config ----------------------------------------------------
 LOG_DIR = Path(os.environ.get("LAB_LOG_DIR", "/var/log/ssh-detection-response"))
 STATE_DIR = Path(os.environ.get("LAB_STATE_DIR", "/var/lib/ssh-detection-response"))
 WEBHOOK_URL = os.environ.get("ALERT_WEBHOOK_URL", "").strip()
+# The example config ships a placeholder URL; treat it as "not configured"
+# rather than POSTing to a URL that is guaranteed to fail.
+if "REPLACE_ME" in WEBHOOK_URL:
+    WEBHOOK_URL = ""
+WEBHOOK_RETRIES = int(os.environ.get("RESPONSE_WEBHOOK_RETRIES", "3"))
 COOLDOWN_SECONDS = int(os.environ.get("RESPONSE_COOLDOWN_SECONDS", "300"))
 
 ALERTS_FILE = LOG_DIR / "alerts.jsonl"
@@ -197,10 +201,31 @@ def _sleep(seconds: float) -> None:
         pass
 
 
+# --- Delivery with retry ---------------------------------------
+def deliver(alert: dict) -> bool:
+    """
+    POST one alert, retrying transient failures with exponential backoff
+    (1s, 2s, 4s, ...). Returns True on success, False after the last retry.
+    OSError covers URLError, HTTPError, and socket timeouts.
+    """
+    content = format_alert(alert)
+    for attempt in range(1, WEBHOOK_RETRIES + 1):
+        try:
+            post_webhook(content)
+            return True
+        except OSError as e:
+            print(f"[WARN] webhook attempt {attempt}/{WEBHOOK_RETRIES} failed: {e}",
+                  file=sys.stderr)
+            if attempt < WEBHOOK_RETRIES:
+                _sleep(2 ** (attempt - 1))
+    return False
+
+
 # --- Main ------------------------------------------------------
 def main() -> int:
     if not WEBHOOK_URL and not DRY_RUN:
-        print("[WARN] ALERT_WEBHOOK_URL not set — running but webhook will be skipped.")
+        print("[WARN] ALERT_WEBHOOK_URL not set (or still the REPLACE_ME placeholder) "
+              "— alerts will be logged here instead of posted. Set it with: sudo make config")
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -223,16 +248,15 @@ def main() -> int:
         ip = alert.get("source_ip", "")
         if cooldowns.should_suppress(ip):
             print(f"[INFO] suppressing notification for {ip} (in cooldown)")
+        elif deliver(alert):
+            print(f"[INFO] notified for {ip} count={alert.get('failure_count')}")
+            cooldowns.mark(ip)
         else:
-            content = format_alert(alert)
-            try:
-                post_webhook(content)
-                print(f"[INFO] notified for {ip} count={alert.get('failure_count')}")
-                cooldowns.mark(ip)
-            except (HTTPError, URLError) as e:
-                # Don't advance offset on webhook failure — retry on next event.
-                print(f"[ERROR] webhook POST failed for {ip}: {e}", file=sys.stderr)
-                continue
+            # Gave up after retries. The alert stays in alerts.jsonl (and in
+            # the detector's journal output) for later review; one bad webhook
+            # must not stall every alert behind it.
+            print(f"[ERROR] giving up on notification for {ip} after "
+                  f"{WEBHOOK_RETRIES} attempts", file=sys.stderr)
 
         save_json(OFFSET_FILE, {"offset": new_offset})
 

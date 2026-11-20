@@ -57,12 +57,20 @@ COOLDOWN_FILE = STATE_DIR / "detector-cooldowns.json"
 ALERT_COOLDOWN_SECONDS = WINDOW_SECONDS
 
 # --- Patterns --------------------------------------------------
-# journalctl -o json gives us the MESSAGE field. We match the standard
-# OpenSSH failure formats. Both 'invalid user' and 'Failed password'
-# count as a failed authentication for our purposes.
+# journalctl -o json gives us the MESSAGE field. Exactly ONE line per failed
+# password attempt is counted: "Failed password for [invalid user ]X from IP".
+#
+# sshd also logs "Invalid user X from IP" for nonexistent accounts, but that
+# line is written IN ADDITION to the "Failed password ... invalid user ..."
+# line for the same attempt. Matching both would count one attempt twice,
+# so "Invalid user" lines are deliberately ignored.
+#
+# The IP group accepts IPv4 and IPv6 literals.
 FAILED_PATTERNS = [
-    re.compile(r"Failed password for (?:invalid user )?(?P<user>\S+) from (?P<ip>\d+\.\d+\.\d+\.\d+)"),
-    re.compile(r"Invalid user (?P<user>\S+) from (?P<ip>\d+\.\d+\.\d+\.\d+)"),
+    re.compile(
+        r"Failed password for (?:invalid user )?(?P<user>\S+) "
+        r"from (?P<ip>[0-9A-Fa-f:.]+) port \d+"
+    ),
 ]
 
 

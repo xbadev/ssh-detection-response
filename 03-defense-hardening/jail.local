@@ -3,21 +3,24 @@
 # Path on target: /etc/fail2ban/jail.local
 # Reload with:    sudo systemctl restart fail2ban
 #
-# This jail provides defense-in-depth at the IP-table layer.
-# Our Phase 04 journald-based detector runs alongside it; the two
-# are intentionally redundant — Fail2Ban enforces, the detector observes
-# and notifies. If one fails, the other still catches the attack.
+# Defense-in-depth alongside the Phase 04 detector. Both read the same
+# source (the systemd journal); they have different jobs:
+#   - Phase 04 detector alerts at DETECT_THRESHOLD (3) failures
+#   - Fail2Ban bans at maxretry (5) failures
+#
+# The ordering is deliberate. If Fail2Ban banned first, the attacker
+# would be cut off before the detector saw enough failures to alert,
+# and the notification half of the pipeline would never fire.
 
 [sshd]
 enabled  = true
 port     = ssh
 filter   = sshd
 backend  = systemd
-logpath  = %(sshd_log)s
-maxretry = 3
+maxretry = 5
 findtime = 60
 bantime  = 600
 
-# backend = systemd is important on modern Ubuntu where /var/log/auth.log
-# may be absent. It tells Fail2Ban to read the journal directly,
-# matching the same data source the Phase 04 detector uses.
+# backend = systemd reads the journal directly, so this works on Ubuntu
+# installs that have no /var/log/auth.log (rsyslog not installed).
+# With the systemd backend, logpath is ignored, so it is not set here.

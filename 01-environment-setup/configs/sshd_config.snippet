@@ -1,33 +1,33 @@
-# SSH Daemon — Lab Hardening Excerpts
+# SSH Daemon — Lab Hardening Drop-in
 #
-# Path on target: drop into /etc/ssh/sshd_config.d/10-lab.conf
-# Reload with:    sudo systemctl reload ssh
+# Path on target: /etc/ssh/sshd_config.d/10-lab.conf
+# Validate first: sudo sshd -t
+# Then reload:    sudo systemctl reload ssh
 #
-# Note: Password authentication is intentionally LEFT ENABLED.
-# The lab simulates SSH brute-force against passwords. Disabling
-# password auth would make the attack scenario impossible by design.
-# In production, you would set PasswordAuthentication no and rely
-# only on PubkeyAuthentication.
+# Why the "10-" prefix: for most sshd options the FIRST value read wins,
+# and Ubuntu includes sshd_config.d/*.conf in lexical order before the
+# main sshd_config. 10-lab.conf therefore beats files like
+# 50-cloud-init.conf, which sets PasswordAuthentication no on some images.
+#
+# Password authentication is intentionally LEFT ENABLED. The lab
+# simulates password brute-force; disabling it would make the attack
+# impossible by design. In production: PasswordAuthentication no.
 
-Port 22
-Protocol 2
-
-# Disable direct root login. Attackers must compromise an unprivileged
-# account first, then escalate — adds a layer and is auditable.
+# No direct root login. An attacker has to compromise an unprivileged
+# account first, then escalate — an extra, auditable step.
 PermitRootLogin no
 
-# Auth methods — both enabled for the lab. See note above.
 PasswordAuthentication yes
 PubkeyAuthentication yes
 
-# Restrict which accounts may authenticate at all. Replace with the
-# value of LAB_USER from lab.env on your target.
+# Only this account may authenticate at all. MUST match LAB_USER in
+# lab.env AND the account you log in with — if it doesn't, you lock
+# yourself out of SSH (use the Proxmox console to recover).
 AllowUsers bader
 
-# Reduce attacker time-per-attempt and total auth tries per connection.
+# Less time per connection, fewer password tries per connection.
 LoginGraceTime 20
 MaxAuthTries 3
 MaxSessions 2
 
-# Banner is intentionally NOT set — a banner that names the system
-# would help an attacker fingerprint it.
+# No Banner: a banner naming the system helps an attacker fingerprint it.
